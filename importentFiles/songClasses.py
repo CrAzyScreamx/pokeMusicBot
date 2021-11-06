@@ -14,7 +14,7 @@ ytdl.utils.bug_reports_message = lambda: ''
 YTDL_OPS = {
     "ignoreerrors": True,
     "default_search": "ytsearch",
-    "format": "bestaudio/best",
+    "format": "251/140/250/249",
     "extractaudio": True,
     'no_warnings': True,
     'source_address': '0.0.0.0',
@@ -38,24 +38,33 @@ class YTDLSource:
         self.videos = None
         self._results = list()
 
-    async def extract_videos(self, search, requester, loop=None):
+    async def extract_videos(self, search, requester, ctx: commands.Context, loop=None):
         loop = loop or asyncio.get_event_loop()
         if not validators.url(search):
             YTDL_OPS["match_title"] = search
         with ytdl.YoutubeDL(YTDL_OPS) as ydl:
-            info = await loop.run_in_executor(None, ydl.extract_info, search, False)
-            videos = list()
+            async with ctx.typing():
+                info = await loop.run_in_executor(None, ydl.extract_info, search, False, None, {}, False)
+                videos = list()
 
-            if 'entries' not in info:
-                single_page = info['webpage_url']
-                entry = ydl.extract_info(single_page, download=False)
-                videos.append(entry)
-            else:
-                for entry in info["entries"]:
+                if '_type' in info and info["_type"] == "playlist":
+                    await ctx.send(embed=discord.Embed(
+                        description="Playlist detected, gathering will be longer than usual",
+                        color=discord.Color.blurple()
+                    ))
+
+                info = await loop.run_in_executor(None, ydl.extract_info, search, False)
+
+                if 'entries' not in info:
+                    single_page = info['webpage_url']
+                    entry = ydl.extract_info(single_page, download=False)
                     videos.append(entry)
+                else:
+                    for entry in info["entries"]:
+                        videos.append(entry)
 
-            for video in videos:
-                self._results.append(Song(video, requester))
+                for video in videos:
+                    self._results.append(Song(video, requester))
 
     @property
     def results(self):
@@ -142,8 +151,8 @@ class Queue:
         random.shuffle(self._queue)
         for song in passedSongs:
             self._queue.insert(0, song)
-        if len(self.queue) > 1:
-            self._next = self._queue[1]
+        if self.currentIndex+1 < len(self._queue):
+            self._next = self._queue[self.currentIndex+1]
 
     def clear(self):
         self._queue.clear()
@@ -158,6 +167,10 @@ class Queue:
     @property
     def queue(self):
         return self._queue
+
+    @queue.setter
+    def queue(self, value: List[Song]):
+        self._queue = value
 
     @property
     def vc(self):
@@ -204,6 +217,16 @@ class Queue:
 
     def resume(self):
         self._vc.resume()
+
+    def removeDupes(self):
+        queue_set = set()
+        queue_add = queue_set.add
+        self.queue = [x for x in self.queue if not (x.title in queue_set or queue_add(x.title))]
+        print(queue_set)
+        print(self.queue)
+        if self.currentIndex+1 < len(self._queue):
+            self._next = self._queue[self.currentIndex+1]
+
 
     async def create_loop_task(self):
         while True:
