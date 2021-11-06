@@ -1,4 +1,5 @@
 import asyncio
+import functools
 from typing import List
 import validators
 
@@ -14,40 +15,47 @@ YTDL_OPS = {
     "ignoreerrors": True,
     "default_search": "ytsearch",
     "format": "bestaudio/best",
-    "extract_audio": True,
-    "audio_format": "mp3",
-    "quiet": True,
-    "audio_quality": 9,
+    "extractaudio": True,
+    'no_warnings': True,
+    'source_address': '0.0.0.0',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'logtostderr': False,
+    'list_formats': True,
+    'cookies': 'importentFiles/cookies.txt',
+    'quiet': True
 }
 
-FFMPEG_BEFORE_OPTS = '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
+FFMPEG_BEFORE_OPTS = {
+    "before_options": '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    "options": '-vn'
+}
 
 
 class YTDLSource:
 
-    def __init__(self, search, requester):
-        videos = self._extract_videos(self, search=search)
+    def __init__(self):
+        self.videos = None
         self._results = list()
-        for video in videos:
-            self._results.append(Song(video, requester))
 
-    @staticmethod
-    def _extract_videos(self, search):
+    async def extract_videos(self, search, requester, loop=None):
+        loop = loop or asyncio.get_event_loop()
         if not validators.url(search):
             YTDL_OPS["match_title"] = search
         with ytdl.YoutubeDL(YTDL_OPS) as ydl:
-            info = ydl.extract_info(search, download=False)
-            video = list()
+            info = await loop.run_in_executor(None, ydl.extract_info, search, False)
+            videos = list()
 
             if 'entries' not in info:
                 single_page = info['webpage_url']
                 entry = ydl.extract_info(single_page, download=False)
-                video.append(entry)
+                videos.append(entry)
             else:
                 for entry in info["entries"]:
-                    video.append(entry)
+                    videos.append(entry)
 
-            return video
+            for video in videos:
+                self._results.append(Song(video, requester))
 
     @property
     def results(self):
@@ -65,8 +73,7 @@ class Song:
         self.thumbnail = video["thumbnail"] if "thumbnail" in video else None
         self.requested = requested_by
         self.duration = video["duration"]
-        self._source = discord.PCMVolumeTransformer(
-            discord.FFmpegPCMAudio(video_format["url"], before_options=FFMPEG_BEFORE_OPTS), volume=1.0)
+        self._source = None
         self._loop = False
 
     @property
@@ -106,8 +113,11 @@ class Queue:
         self._current: Song = None
         self._next: Song = None
         self._currentIndex = 0
-
         self.loopedTask = None
+
+        self._skipping = False
+        self._backing = False
+        self._loop = False
 
     def _addSong(self, song: Song):
         self._queue.append(song)
@@ -116,19 +126,34 @@ class Queue:
 
     def addSongs(self, songs: List[Song]):
         for song in songs:
+            if len(self._queue) == 1:
+                self.next = song
             self._addSong(song)
 
     def deleteSong(self, index):
         self._queue.pop(index - 1)
 
     def shuffle(self):
-        self.deleteSong(1)
+        passedSongs = list()
+        for i in range(self.currentIndex + 1):
+            passedSongs.append(self.queue[0])
+            self.deleteSong(1)
+        passedSongs = reversed(passedSongs)
         random.shuffle(self._queue)
-        self.queue.insert(0, self.current)
+        for song in passedSongs:
+            self._queue.insert(0, song)
+        if len(self.queue) > 1:
+            self._next = self._queue[1]
 
     def clear(self):
         self._queue.clear()
         self._queue.append(self.current)
+
+    def skip(self):
+        self._skipping = True
+
+    def back(self):
+        self._backing = True
 
     @property
     def queue(self):
@@ -138,6 +163,10 @@ class Queue:
     def vc(self):
         return self._vc
 
+    @vc.setter
+    def vc(self, value: discord.VoiceClient):
+        self._vc = value
+
     @property
     def current(self):
         return self._current
@@ -145,7 +174,6 @@ class Queue:
     @current.setter
     def current(self, value: Song):
         self._current = value
-
 
     @property
     def next(self):
@@ -163,6 +191,14 @@ class Queue:
     def currentIndex(self, value: int):
         self._currentIndex = value
 
+    @property
+    def loop(self):
+        return self._loop
+
+    @loop.setter
+    def loop(self, value: bool):
+        self._loop = value
+
     def pause(self):
         self._vc.pause()
 
@@ -178,20 +214,31 @@ class Queue:
             async with self._ctx.typing():
                 self.current = self.queue[self._currentIndex]
                 self.current.source = discord.PCMVolumeTransformer(
-                    discord.FFmpegPCMAudio(self.current.stream_url, before_options=FFMPEG_BEFORE_OPTS), volume=1.0)
+                    discord.FFmpegPCMAudio(self.current.stream_url, before_options=FFMPEG_BEFORE_OPTS), volume=0.5)
                 await self._ctx.send(embed=self.current.create_embed())
 
-            if len(self._queue) > 1:
-                self._next = self._queue[1]
+            if len(self._queue) > 1 and self.currentIndex + 1 < len(self._queue):
+                self._next = self._queue[self.currentIndex + 1]
 
             self._vc.play(self.current.source)
             while self._vc.is_playing() or self._vc.is_paused():
+                if self._skipping or self._backing:
+                    self._vc.stop()
+                    break
                 await asyncio.sleep(1)
-            await asyncio.sleep(1)
-            if not self.current.loop:
+            await asyncio.sleep(2)
+            if not self.current.loop or self._skipping:
+                self._skipping = False
                 self.currentIndex += 1
+            if self._backing:
+                if self.currentIndex > 0:
+                    self._backing = False
+                    self.currentIndex -= 2
 
-        if not self._vc is None:
+        if self._loop:
+            self.currentIndex = 0
+            self.loopedTask = self._client.loop.create_task(self.create_loop_task())
+        if not self._vc is None and not self._loop:
             asyncio.run_coroutine_threadsafe(self._vc.disconnect(),
                                              self._client.loop)
             self._vc = None
