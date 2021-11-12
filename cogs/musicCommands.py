@@ -11,17 +11,20 @@ class musicCommands(commands.Cog):
     def __init__(self, client):
         self.client: discord.Client = client
         self.queue: Queue = None
+        self.join_occured = False
 
     @commands.command(aliases=['join', 'j', 'summon'])
     async def _join(self, ctx: commands.Context):
+        self.join_occured = True
         if not ctx.author.voice:
+            self.join_occured = False
             await ctx.send(
                 embed=self._embedSentence("You must be connected to a channel", discord.Color.from_rgb(0, 0, 0)))
             raise NotPlayingAnything("User not connected to the channel")
-        message: discord.Message = ctx.message
-        await message.add_reaction("👌")
         vc = await ctx.author.voice.channel.connect()
         self.queue = Queue(self.client, vc, ctx)
+        message: discord.Message = ctx.message
+        await message.add_reaction("👌")
 
     @commands.command(aliases=['leave', 'dc', 'disconnect'])
     async def _leave(self, ctx: commands.Context):
@@ -36,7 +39,7 @@ class musicCommands(commands.Cog):
         if search is None:
             return await ctx.send(
                 embed=self._embedSentence("You must provide a url or a search", discord.Color.from_rgb(0, 0, 0)))
-        if self.queue is None:
+        if self.queue is None and not self.join_occured:
             await ctx.invoke(self._join)
 
         ytdlSource = YTDLSource()
@@ -79,18 +82,23 @@ class musicCommands(commands.Cog):
 
     @commands.command(aliases=['queue', 'q'])
     async def _queue(self, ctx: commands.Context):
+        if self.queue is None:
+            return await ctx.send(embed=self._embedSentence("Bot is not playing anything", discord.Color.from_rgb(0, 0, 0)))
         if len(self.queue.queue) == 0:
             return await ctx.send("```PokeMusic Queue\n```")
-        sen = "```PokeMusic Queue\n-------------------\n"
-        for i in range(len(self.queue.queue)):
+        sen = f"```PokeMusic Queue - Page {self.queue.page}\n-------------------\n"
+        for i in range(min(25, len(self.queue.queue))):
             sen += str(i + 1) + ". " + self.queue.queue[i].title
-            if i == self.queue.currentIndex:
-                sen += " -> Current Song"
             sen += "\n"
         loopstate = " Song is Looped" if self.queue.current.loop else " Song is not Looped"
         queueLoop = "Queue is Looped" if self.queue.loop else "Queue is not Looped"
-        sen += f"-----------------------------------------------\n{loopstate}\t\t{queueLoop}```"
-        await ctx.send(sen)
+        currentSong = self.queue.current.title
+        nextSong = f"\nNext Song -> {self.queue.next.title}" if self.queue.currentIndex != len(self.queue.queue) else None
+        sen += f"-----------------------------------------------\n{loopstate}\t\t{queueLoop}\n-------------------\nCurrent Song -> {currentSong}{nextSong}```"
+        self.queue.page = 1
+        self.queue.msg = await ctx.send(sen)
+        if self.queue.countPage() > 1:
+            await self.queue.msg.add_reaction('⏭')
 
     @commands.command(aliases=['clearqueue', 'clearq', 'clear'])
     async def _clear(self, ctx):
@@ -143,18 +151,10 @@ class musicCommands(commands.Cog):
         self.queue.removeDupes()
         await ctx.message.add_reaction('👍')
 
-    @commands.Cog.listener()
-    async def on_voice_state_update(self, member, before, after):
-        if int(member.id) == int(os.environ.get("BOT_ID")):
-            if after.channel is None:
-                self.queue.currentIndex = len(self.queue.queue)
-                self.queue = None
-
     @_pause.before_invoke
     @_resume.before_invoke
     @_now_playing.before_invoke
     @_loopSong.before_invoke
-    @_queue.before_invoke
     @_clear.before_invoke
     @_delete.before_invoke
     @_shuffle.before_invoke
@@ -167,6 +167,55 @@ class musicCommands(commands.Cog):
         if not ctx.author.voice or ctx.author.voice.channel is not self.queue.vc.channel:
             await ctx.send(embed=self._embedSentence("You must be on the same channel as the bot!", discord.Color.from_rgb(0, 0, 0)))
             raise NotPlayingAnything("You must be on the same channel as the bot!")
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        if int(member.id) == int(os.environ.get("BOT_ID")):
+            if after.channel is None:
+                self.queue.currentIndex = len(self.queue.queue)
+                self.queue = None
+                self.join_occured = False
+
+    @commands.Cog.listener()
+    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.Member):
+        if not user.bot and self.queue.msg == reaction.message:
+            if str(reaction.emoji) == str('⏭'):
+                self.queue.page += 1
+            elif str(reaction.emoji) == str('⏮'):
+                self.queue.page -= 1
+            print(self.queue.page)
+            firstTrack = (self.queue.page-1) * 25
+            print(firstTrack)
+            trackList = list()
+            for i in range(firstTrack, min(firstTrack+25, len(self.queue.queue))):
+                trackList.append(self.queue.queue[i])
+            await self.editQueue(reaction.message, trackList)
+            msg: discord.Message = reaction.message
+            for r in msg.reactions:
+                await msg.clear_reaction(r)
+            if self.queue.page == 1:
+                await msg.add_reaction('⏭')
+            elif 1 < self.queue.page < self.queue.countPage():
+                await msg.add_reaction('⏭')
+                await msg.add_reaction('⏮')
+            elif self.queue.countPage() == self.queue.page:
+                await msg.add_reaction('⏮')
+
+
+
+    async def editQueue(self, msg: discord.Message, trackList: List[Song]):
+        sen = f"```PokeMusic Queue - Page {self.queue.page}\n-------------------\n"
+        for i in range(len(trackList)):
+            sen += str(i + 1) + ". " + trackList[i].title
+            sen += "\n"
+        loopstate = " Song is Looped" if self.queue.current.loop else " Song is not Looped"
+        queueLoop = "Queue is Looped" if self.queue.loop else "Queue is not Looped"
+        currentSong = self.queue.current.title
+        nextSong = f"\nNext Song -> {self.queue.next.title}" if self.queue.currentIndex != len(self.queue.queue) else None
+        sen += f"-----------------------------------------------\n{loopstate}\t\t{queueLoop}\n-------------------\nCurrent Song -> {currentSong}{nextSong}```"
+        await msg.edit(content=sen)
+
+
 
     @staticmethod
     def _embedSentence(sen: str, color: discord.Color):
@@ -181,6 +230,7 @@ class musicCommands(commands.Cog):
             color=color
         )
         return embed
+
 
 
 def setup(client):

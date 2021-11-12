@@ -1,5 +1,5 @@
 import asyncio
-import functools
+import math
 from typing import List
 import validators
 
@@ -12,22 +12,16 @@ import random
 ytdl.utils.bug_reports_message = lambda: ''
 
 YTDL_OPS = {
-    "ignoreerrors": True,
     "default_search": "ytsearch",
-    "format": "251/140/250/249",
-    "extractaudio": True,
-    'no_warnings': True,
-    'source_address': '0.0.0.0',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
-    'logtostderr': False,
-    'list_formats': True,
-    'cookies': 'importentFiles/cookies.txt',
-    'quiet': True
+    "extract_audio": "True",
+    "format": "bestaudio",
+    "audio_format": "mp3",
+    "audio_quality": "0",
+    "quiet": True
 }
 
 FFMPEG_BEFORE_OPTS = {
-    "before_options": '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    "before_options": '-reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 2',
     "options": '-vn'
 }
 
@@ -52,7 +46,6 @@ class YTDLSource:
                         description="Playlist detected, gathering will be longer than usual",
                         color=discord.Color.blurple()
                     ))
-
                 info = await loop.run_in_executor(None, ydl.extract_info, search, False)
 
                 if 'entries' not in info:
@@ -81,7 +74,7 @@ class Song:
         self.uploader = video["uploader"] if "uploader" in video else ""
         self.thumbnail = video["thumbnail"] if "thumbnail" in video else None
         self.requested = requested_by
-        self.duration = video["duration"]
+        self._duration = video["duration"]
         self._source = None
         self._loop = False
 
@@ -107,7 +100,7 @@ class Song:
             description=f"``{self.title}``",
             color=discord.Color.blurple()
         )
-                 .add_field(name="Duration", value=dt.timedelta(seconds=self.duration))
+                 .add_field(name="Duration", value=dt.timedelta(seconds=self._duration))
                  .add_field(name="Requested By", value=self.requested.display_name)
                  .set_thumbnail(url=self.thumbnail))
         return embed
@@ -127,6 +120,19 @@ class Queue:
         self._skipping = False
         self._backing = False
         self._loop = False
+        self._msg: discord.Message = None
+        self._page = 1
+
+    @property
+    def page(self):
+        return self._page
+
+    @page.setter
+    def page(self, value: int):
+        self._page = value
+
+    def countPage(self):
+        return math.ceil(len(self.queue) / 25)
 
     def _addSong(self, song: Song):
         self._queue.append(song)
@@ -151,8 +157,8 @@ class Queue:
         random.shuffle(self._queue)
         for song in passedSongs:
             self._queue.insert(0, song)
-        if self.currentIndex+1 < len(self._queue):
-            self._next = self._queue[self.currentIndex+1]
+        if self.currentIndex + 1 < len(self._queue):
+            self._next = self._queue[self.currentIndex + 1]
 
     def clear(self):
         self._queue.clear()
@@ -163,6 +169,14 @@ class Queue:
 
     def back(self):
         self._backing = True
+
+    @property
+    def msg(self):
+        return self._msg
+
+    @msg.setter
+    def msg(self, value: discord.Message):
+        self._msg = value
 
     @property
     def queue(self):
@@ -222,11 +236,12 @@ class Queue:
         queue_set = set()
         queue_add = queue_set.add
         self.queue = [x for x in self.queue if not (x.title in queue_set or queue_add(x.title))]
-        print(queue_set)
-        print(self.queue)
-        if self.currentIndex+1 < len(self._queue):
-            self._next = self._queue[self.currentIndex+1]
-
+        for song in self.queue:
+            if song.title == self.current.title:
+                self.currentIndex = self.queue.index(song)
+                self.current = song
+        if self.currentIndex + 1 < len(self._queue):
+            self._next = self._queue[self.currentIndex + 1]
 
     async def create_loop_task(self):
         while True:
@@ -237,7 +252,8 @@ class Queue:
             async with self._ctx.typing():
                 self.current = self.queue[self._currentIndex]
                 self.current.source = discord.PCMVolumeTransformer(
-                    discord.FFmpegPCMAudio(self.current.stream_url, before_options=FFMPEG_BEFORE_OPTS), volume=0.5)
+                    discord.FFmpegPCMAudio(self.current.stream_url, before_options=FFMPEG_BEFORE_OPTS["before_options"], options=FFMPEG_BEFORE_OPTS["options"]), volume=0.5)
+
                 await self._ctx.send(embed=self.current.create_embed())
 
             if len(self._queue) > 1 and self.currentIndex + 1 < len(self._queue):
@@ -249,7 +265,6 @@ class Queue:
                     self._vc.stop()
                     break
                 await asyncio.sleep(1)
-            await asyncio.sleep(2)
             if not self.current.loop or self._skipping:
                 self._skipping = False
                 self.currentIndex += 1
