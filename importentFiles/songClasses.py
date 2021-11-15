@@ -8,16 +8,22 @@ import youtube_dl as ytdl
 from discord.ext import commands
 import datetime as dt
 import random
+import re
 
 ytdl.utils.bug_reports_message = lambda: ''
 
 YTDL_OPS = {
-    "default_search": "ytsearch",
-    "extract_audio": "True",
-    "format": "bestaudio",
-    "audio_format": "mp3",
-    "audio_quality": "0",
-    "quiet": True
+    'format': 'bestaudio/best',
+    'extractaudio': True,
+    'audioformat': 'mp3',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'ytsearch',
+    'source_address': '0.0.0.0',
 }
 
 FFMPEG_BEFORE_OPTS = {
@@ -38,26 +44,31 @@ class YTDLSource:
             YTDL_OPS["match_title"] = search
         with ytdl.YoutubeDL(YTDL_OPS) as ydl:
             async with ctx.typing():
-                info = await loop.run_in_executor(None, ydl.extract_info, search, False, None, {}, False)
+                try:
+                    info = await loop.run_in_executor(None, ydl.extract_info, search, False, None, {}, False)
+                except Exception:
+                    info = -1
                 videos = list()
-
-                if '_type' in info and info["_type"] == "playlist":
-                    await ctx.send(embed=discord.Embed(
-                        description="Playlist detected, gathering will be longer than usual",
-                        color=discord.Color.blurple()
-                    ))
-                info = await loop.run_in_executor(None, ydl.extract_info, search, False)
-
-                if 'entries' not in info:
-                    single_page = info['webpage_url']
-                    entry = ydl.extract_info(single_page, download=False)
-                    videos.append(entry)
+                if info == -1:
+                    self.results.append(-1)
                 else:
-                    for entry in info["entries"]:
-                        videos.append(entry)
+                    if '_type' in info and info["_type"] == "playlist":
+                        await ctx.send(embed=discord.Embed(
+                            description="Playlist detected, gathering will take longer than usual",
+                            color=discord.Color.blurple()
+                        ))
+                    info = await loop.run_in_executor(None, ydl.extract_info, search, False)
 
-                for video in videos:
-                    self._results.append(Song(video, requester))
+                    if 'entries' not in info:
+                        single_page = info['webpage_url']
+                        entry = ydl.extract_info(single_page, download=False)
+                        videos.append(entry)
+                    else:
+                        for entry in info["entries"]:
+                            videos.append(entry)
+
+                    for video in videos:
+                        self._results.append(Song(video, requester))
 
     @property
     def results(self):
@@ -252,7 +263,8 @@ class Queue:
             async with self._ctx.typing():
                 self.current = self.queue[self._currentIndex]
                 self.current.source = discord.PCMVolumeTransformer(
-                    discord.FFmpegPCMAudio(self.current.stream_url, before_options=FFMPEG_BEFORE_OPTS["before_options"], options=FFMPEG_BEFORE_OPTS["options"]), volume=0.5)
+                    discord.FFmpegPCMAudio(self.current.stream_url, before_options=FFMPEG_BEFORE_OPTS["before_options"],
+                                           options=FFMPEG_BEFORE_OPTS["options"]), volume=0.5)
 
                 await self._ctx.send(embed=self.current.create_embed())
 
