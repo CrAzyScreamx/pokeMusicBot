@@ -8,7 +8,6 @@ import youtube_dl as ytdl
 from discord.ext import commands
 import datetime as dt
 import random
-import re
 
 ytdl.utils.bug_reports_message = lambda: ''
 
@@ -38,11 +37,12 @@ class YTDLSource:
         self.videos = None
         self._results = list()
 
-    async def extract_videos(self, search, requester, ctx: commands.Context, loop=None):
+    async def extract_videos(self, search, requester, ctx: commands.Context, loop=None, timestamp=0):
         loop = loop or asyncio.get_event_loop()
         if not validators.url(search):
             YTDL_OPS["match_title"] = search
         with ytdl.YoutubeDL(YTDL_OPS) as ydl:
+            FFMPEG_BEFORE_OPTS["options"] = f'-vn -ss {timestamp}'
             async with ctx.typing():
                 try:
                     info = await loop.run_in_executor(None, ydl.extract_info, search, False, None, {}, False)
@@ -133,6 +133,7 @@ class Queue:
         self._loop = False
         self._msg: discord.Message = None
         self._page = 1
+        self._accessDenied = False
 
     @property
     def page(self):
@@ -180,6 +181,10 @@ class Queue:
 
     def back(self):
         self._backing = True
+
+    def jumpTo(self, index):
+        self.currentIndex = index - 2
+        self.skip()
 
     @property
     def msg(self):
@@ -266,24 +271,38 @@ class Queue:
                     discord.FFmpegPCMAudio(self.current.stream_url, before_options=FFMPEG_BEFORE_OPTS["before_options"],
                                            options=FFMPEG_BEFORE_OPTS["options"]), volume=0.5)
 
-                await self._ctx.send(embed=self.current.create_embed())
+                if not self._accessDenied:
+                    await self._ctx.send(embed=self.current.create_embed())
+                else:
+                    self._accessDenied = False
 
             if len(self._queue) > 1 and self.currentIndex + 1 < len(self._queue):
                 self._next = self._queue[self.currentIndex + 1]
+            else:
+                self._next = None
 
             self._vc.play(self.current.source)
+            timestamp = 0
             while self._vc.is_playing() or self._vc.is_paused():
                 if self._skipping or self._backing:
                     self._vc.stop()
                     break
                 await asyncio.sleep(1)
-            if not self.current.loop or self._skipping:
-                self._skipping = False
-                self.currentIndex += 1
-            if self._backing:
-                if self.currentIndex > 0:
-                    self._backing = False
-                    self.currentIndex -= 2
+                timestamp += 1
+            if not self.current.loop and not self._skipping and not self._backing:
+                ytdlSource = YTDLSource()
+                await ytdlSource.extract_videos(self.current.title, self.current.requested, self._ctx,
+                                                self._client.loop, timestamp=timestamp-1)
+                self.queue[self.currentIndex] = ytdlSource.results[0]
+                self._accessDenied = True
+            else:
+                if not self.current.loop or self._skipping:
+                    self._skipping = False
+                    self.currentIndex += 1
+                if self._backing:
+                    if self.currentIndex > 0:
+                        self._backing = False
+                        self.currentIndex -= 2
 
         if self._loop:
             self.currentIndex = 0

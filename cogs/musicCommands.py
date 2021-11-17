@@ -95,6 +95,7 @@ class musicCommands(commands.Cog):
                 embed=self._embedSentence("Bot is not playing anything", discord.Color.from_rgb(0, 0, 0)))
         if len(self.music.queue) == 0:
             return await ctx.send("```PokeMusic Queue\n```")
+        self.music.page = 1
         sen = f"```PokeMusic Queue - Page {self.music.page}\n-------------------\n"
         for i in range(min(25, len(self.music.queue))):
             sen += str(i + 1) + ". " + self.music.queue[i].title
@@ -108,7 +109,6 @@ class musicCommands(commands.Cog):
         else:
             nextSong += "None"
         sen += f"-----------------------------------------------\n{loopstate}\t\t{queueLoop}\n-------------------\nCurrent Song -> {currentSong}{nextSong}```"
-        self.music.page = 1
         self.music.msg = await ctx.send(sen)
         if self.music.countPage() > 1:
             await self.music.msg.add_reaction('⏭')
@@ -164,6 +164,17 @@ class musicCommands(commands.Cog):
         self.music.removeDupes()
         await ctx.message.add_reaction('👍')
 
+    @commands.command(aliases=['jumpto'])
+    async def _jumpTo(self, ctx: commands.Context, index):
+        try:
+            index = int(index)
+        except ValueError as e:
+            return await ctx.send(
+                embed=self._embedSentence("Number must be an integer!", discord.Color.from_rgb(0, 0, 0)))
+        if not 0 < index <= len(self.music.queue):
+            return await ctx.send(embed=self._embedSentence(f"Number must be between 1 and {len(self.music.queue)}", discord.Color.from_rgb(0, 0, 0)))
+        self.music.jumpTo(index)
+
     @_pause.before_invoke
     @_resume.before_invoke
     @_now_playing.before_invoke
@@ -173,6 +184,7 @@ class musicCommands(commands.Cog):
     @_shuffle.before_invoke
     @_loopqueue.before_invoke
     @_removeDupes.before_invoke
+    @_jumpTo.before_invoke
     async def ensure_state(self, ctx):
         if self.music is None or self.music.vc and not self.music.vc.is_playing() and not self.music.vc.is_paused():
             await ctx.send(embed=self._embedSentence("Bot is not playing anything!", discord.Color.from_rgb(0, 0, 0)))
@@ -197,9 +209,7 @@ class musicCommands(commands.Cog):
                 self.music.page += 1
             elif str(reaction.emoji) == str('⏮'):
                 self.music.page -= 1
-            print(self.music.page)
             firstTrack = (self.music.page - 1) * 25
-            print(firstTrack)
             trackList = list()
             for i in range(firstTrack, min(firstTrack + 25, len(self.music.queue))):
                 trackList.append(self.music.queue[i])
@@ -218,7 +228,7 @@ class musicCommands(commands.Cog):
     async def editQueue(self, msg: discord.Message, trackList: List[Song]):
         sen = f"```PokeMusic Queue - Page {self.music.page}\n-------------------\n"
         for i in range(len(trackList)):
-            sen += str(i + 1) + ". " + trackList[i].title
+            sen += str((i + 1) + ((self.music.page-1) * 25)) + ". " + trackList[i].title
             sen += "\n"
         loopstate = " Song is Looped" if self.music.current.loop else " Song is not Looped"
         queueLoop = "Queue is Looped" if self.music.loop else "Queue is not Looped"
