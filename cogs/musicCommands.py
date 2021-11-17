@@ -37,7 +37,7 @@ class musicCommands(commands.Cog):
         if search is None:
             return await ctx.send(
                 embed=self._embedSentence("You must provide a url or a search", discord.Color.from_rgb(0, 0, 0)))
-        if self.music is None or not int(ctx.message.guild.id) in list(self.music.keys()):
+        if self.music is None or not int(ctx.message.guild.id) in list(self.music.keys()) or self.music[int(ctx.message.guild.id)] is None:
             await ctx.invoke(self._join, activate_reaction=False)
         message: discord.Message = ctx.message
         await message.add_reaction("☝")
