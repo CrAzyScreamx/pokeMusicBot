@@ -26,7 +26,7 @@ YTDL_OPS = {
 }
 
 FFMPEG_BEFORE_OPTS = {
-    "before_options": '-reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 2',
+    "before_options": '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2',
     "options": '-vn'
 }
 
@@ -105,6 +105,10 @@ class Song:
     def loop(self, value: bool):
         self._loop = value
 
+    @property
+    def duration(self):
+        return self._duration
+
     def create_embed(self):
         embed = (discord.Embed(
             title="Now Playing",
@@ -134,6 +138,7 @@ class Queue:
         self._msg: discord.Message = None
         self._page = 1
         self._accessDenied = False
+        self._HTTPERROR = 0
 
     @property
     def page(self):
@@ -282,19 +287,19 @@ class Queue:
                 self._next = None
 
             self._vc.play(self.current.source)
-            timestamp = 0
+            self._HTTPERROR = 0
             while self._vc.is_playing() or self._vc.is_paused():
                 if self._skipping or self._backing:
                     self._vc.stop()
                     break
+                self._HTTPERROR += 1
                 await asyncio.sleep(1)
-                timestamp += 1
-            if not self.current.loop and not self._skipping and not self._backing:
+            if self._HTTPERROR >= 1 and not self._skipping and not self._backing:
+                self._accessDenied = True
                 ytdlSource = YTDLSource()
                 await ytdlSource.extract_videos(self.current.title, self.current.requested, self._ctx,
-                                                self._client.loop, timestamp=timestamp-1)
+                                                self._client.loop)
                 self.queue[self.currentIndex] = ytdlSource.results[0]
-                self._accessDenied = True
             else:
                 if not self.current.loop or self._skipping:
                     self._skipping = False
@@ -311,3 +316,12 @@ class Queue:
             asyncio.run_coroutine_threadsafe(self._vc.disconnect(),
                                              self._client.loop)
             self._vc = None
+
+
+def convertToSeconds(t):
+    try:
+        h, m, s = [int(i) for i in t.split(':')]
+    except ValueError:
+        m, s = [int(i) for i in t.split(':')]
+        h = 0
+    return 3600 * h + 60 * m + s
