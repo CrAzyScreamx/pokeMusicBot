@@ -294,7 +294,7 @@ class Queue:
                     break
                 self._HTTPERROR += 1
                 await asyncio.sleep(1)
-            if self._HTTPERROR >= 1 and not self._skipping and not self._backing:
+            if 1 <= self._HTTPERROR < 2 and not self._skipping and not self._backing:
                 self._accessDenied = True
                 ytdlSource = YTDLSource()
                 await ytdlSource.extract_videos(self.current.title, self.current.requested, self._ctx,
