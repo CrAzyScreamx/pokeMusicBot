@@ -74,13 +74,13 @@ class YTDLSource:
                         self._results.append(Song(video, requester))
 
     async def extract_spotify_videos(self, search, requester, ctx: commands.Context, loop=None, timestamp=0):
+        self.results.append(None)
         FFMPEG_BEFORE_OPTS["options"] = f'-vn -ss {timestamp}'
         loop = loop or asyncio.get_event_loop()
         tracks = list()
         if search.startswith('https://open.spotify.com/track/'):
             result = self.spotify.track(search)
             tracks.append(result['name'] + result['artists'][0]['name'])
-            self.results.append(None)
         elif search.startswith('https://open.spotify.com/playlist/'):
             await ctx.send(embed=discord.Embed(
                 description="Playlist detected, gathering will take longer than usual",
@@ -89,9 +89,24 @@ class YTDLSource:
             results = self.spotify.playlist(search)
             for result in results['tracks']['items']:
                 tracks.append(result['track']['name'] + " - " + result['track']['artists'][0]['name'] + " (Lyrics)")
-            self.results.append(None)
+        elif search.startswith('https://open.spotify.com/album/'):
+            await ctx.send(embed=discord.Embed(
+                description="Album detected, gathering will take longer than usual",
+                color=discord.Color.blurple()
+            ))
+            results = self.spotify.album(search)
+            for result in results['tracks']['items']:
+                tracks.append(result['name'] + " - " + result['artists'][0]['name'] + " (Lyrics)")
+        elif search.startswith('https://open.spotify.com/artist/'):
+            await ctx.send(embed=discord.Embed(
+                description="Artist detected, fetching top tracks, gathering will take longer than usual",
+                color=discord.Color.blurple()
+            ))
+            results = self.spotify.artist_top_tracks(search)
+            for result in results['tracks']:
+                tracks.append(result['name'] + " - " + result['artists'][0]['name'] + " (Lyrics)")
         else:
-            self.results.append(-1)
+            self.results[0] = -1
         if self.results[0] is None:
             self.results.clear()
             async with ctx.typing():

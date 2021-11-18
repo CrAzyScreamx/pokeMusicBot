@@ -43,13 +43,13 @@ class musicCommands(commands.Cog):
         message: discord.Message = ctx.message
         await message.add_reaction("☝")
         ytdlSource = YTDLSource()
-        if search.startswith('https://open.spotify.com/track/') or search.startswith(
-                'https://open.spotify.com/playlist/'):
+        if search.startswith(tuple(['https://open.spotify.com/track/', 'https://open.spotify.com/playlist/', 'https://open.spotify.com/album/', "https://open.spotify.com/artist/"])):
             await ytdlSource.extract_spotify_videos(search, ctx.author, ctx, self.client.loop)
-        else:
+        elif search.startswith('https://www.youtube.com/'):
             await ytdlSource.extract_videos(search, ctx.author, ctx, self.client.loop)
         if ytdlSource.results[0] == -1:
-            await self.music[int(ctx.message.guild.id)].vc.disconnect()
+            if len(self.music[int(ctx.message.guild.id)].queue) == 0:
+                await self.music[int(ctx.message.guild.id)].vc.disconnect()
             return await ctx.send(
                 embed=self._embedSentence(f"Unable to fetch URL Data",
                                           discord.Color.from_rgb(0, 0, 0)))
