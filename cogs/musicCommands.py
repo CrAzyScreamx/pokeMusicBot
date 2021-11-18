@@ -47,7 +47,7 @@ class musicCommands(commands.Cog):
         if search.startswith(tuple(['https://open.spotify.com/track/', 'https://open.spotify.com/playlist/',
                                     'https://open.spotify.com/album/', "https://open.spotify.com/artist/"])):
             await ytdlSource.extract_spotify_videos(search, ctx.author, ctx, self.client.loop)
-        elif search.startswith('https://www.youtube.com/'):
+        elif search.startswith('https://www.youtube.com/') or not validators.url(search):
             await ytdlSource.extract_videos(search, ctx.author, ctx, self.client.loop)
         else:
             return await ctx.send(
