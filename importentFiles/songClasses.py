@@ -13,6 +13,7 @@ from spotipy import SpotifyClientCredentials
 
 ytdl.utils.bug_reports_message = lambda: ''
 
+
 YTDL_OPS = {
     'format': 'bestaudio/best',
     'extractaudio': True,
@@ -27,7 +28,7 @@ YTDL_OPS = {
     'source_address': '0.0.0.0',
 }
 
-FFMPEG_BEFORE_OPTS = {
+FFMPEG_OPS = {
     "before_options": '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2',
     "options": '-vn'
 }
@@ -40,18 +41,19 @@ class YTDLSource:
         self._results = list()
         self.spotify = spotipy.Spotify(client_credentials_manager=SpotifyClientCredentials())
 
-    async def extract_videos(self, search, requester, ctx: commands.Context, loop=None, timestamp=0):
+    async def extract_videos(self, search, ctx: commands.Context, loop=None, timestamp=0):
+        requester = ctx.author
         loop = loop or asyncio.get_event_loop()
+
         if not validators.url(search):
             YTDL_OPS["match_title"] = search
         with ytdl.YoutubeDL(YTDL_OPS) as ydl:
-            FFMPEG_BEFORE_OPTS["options"] = f'-vn -ss {timestamp}'
+            FFMPEG_OPS["options"] = f'-vn -ss {timestamp}'
             async with ctx.typing():
                 try:
                     info = await loop.run_in_executor(None, ydl.extract_info, search, False, None, {}, False)
                 except Exception:
                     info = -1
-                videos = list()
                 if info != -1:
                     if '_type' in info and info["_type"] == "playlist":
                         await ctx.send(embed=discord.Embed(
@@ -63,50 +65,45 @@ class YTDLSource:
                     if 'entries' not in info:
                         single_page = info['webpage_url']
                         entry = ydl.extract_info(single_page, download=False)
-                        videos.append(entry)
+                        self._results.append(Song(entry, requester))
                     else:
-                        for entry in info["entries"]:
-                            videos.append(entry)
+                        self._results.extend(Song(entry, requester) for entry in info["entries"])
 
-                    for video in videos:
-                        self._results.append(Song(video, requester))
 
-    async def extract_spotify_videos(self, search, requester, ctx: commands.Context, loop=None, timestamp=0):
-        FFMPEG_BEFORE_OPTS["options"] = f'-vn -ss {timestamp}'
+    async def extract_spotify_videos(self, search, ctx: commands.Context, loop=None, timestamp=0):
+        requester = ctx.author
+        FFMPEG_OPS["options"] = f'-vn -ss {timestamp}'
         loop = loop or asyncio.get_event_loop()
         tracks = list()
         if search.startswith('https://open.spotify.com/track/'):
             result = self.spotify.track(search)
             tracks.append(result['name'] + result['artists'][0]['name'])
+
         elif search.startswith('https://open.spotify.com/playlist/'):
             await ctx.send(embed=discord.Embed(
                 description="Playlist detected, gathering will take longer than usual",
                 color=discord.Color.blurple()
             ))
             results = self.spotify.playlist(search)
-            for result in results['tracks']['items']:
-                tracks.append(result['track']['name'] + " - " + result['track']['artists'][0]['name'] + " (Lyrics)")
+            tracks.extend(result['track']['name'] + " - " + result['track']['artists'][0]['name'] for result in results)
+
         elif search.startswith('https://open.spotify.com/album/'):
             await ctx.send(embed=discord.Embed(
                 description="Album detected, gathering will take longer than usual",
                 color=discord.Color.blurple()
             ))
             results = self.spotify.album(search)
-            for result in results['tracks']['items']:
-                tracks.append(result['name'] + " - " + result['artists'][0]['name'] + " (Lyrics)")
+            tracks.extend(result['name'] + " - " + result['artists'][0]['name'] for result in results)
         elif search.startswith('https://open.spotify.com/artist/'):
             await ctx.send(embed=discord.Embed(
                 description="Artist detected, fetching top tracks, gathering will take longer than usual",
                 color=discord.Color.blurple()
             ))
             results = self.spotify.artist_top_tracks(search)
-            for result in results['tracks']:
-                tracks.append(result['name'] + " - " + result['artists'][0]['name'] + " (Lyrics)")
+            tracks.extend(result['name'] + " - " + result['artists'][0]['name'] for result in results)
         async with ctx.typing():
             entries = await loop.run_in_executor(None, self._searchTracks, tracks)
-            for entry in entries:
-                self.results.append(Song(entry["entries"][0], requester))
-
+            self._results.extend(Song(entry["entries"][0], requester) for entry in entries)
 
     @staticmethod
     def _searchTracks(tracks: List[str]):
@@ -114,10 +111,9 @@ class YTDLSource:
         for track in tracks:
             YTDL_OPS["match_title"] = track
             with ytdl.YoutubeDL(YTDL_OPS) as ydl:
-                entry = ydl.extract_info(track, download=False)
+                entry = ydl.extract_info(track.join(" (Lyrics)"), download=False)
                 entries.append(entry)
         return entries
-
 
     @property
     def results(self):
@@ -215,14 +211,12 @@ class Queue:
         self._queue.pop(index - 1)
 
     def shuffle(self):
-        passedSongs = list()
-        for i in range(self.currentIndex + 1):
-            passedSongs.append(self.queue[0])
-            self.deleteSong(1)
-        passedSongs = reversed(passedSongs)
+        passedSongs = list(reversed(self._queue[:self.currentIndex+1]))
+        self._queue = self._queue[self.currentIndex + 1:]
         random.shuffle(self._queue)
-        for song in passedSongs:
-            self._queue.insert(0, song)
+        self._queue = list(reversed(self._queue))
+        self._queue.extend(passedSongs)
+        self._queue = list(reversed(self._queue))
         if self.currentIndex + 1 < len(self._queue):
             self._next = self._queue[self.currentIndex + 1]
 
@@ -322,8 +316,8 @@ class Queue:
             async with self._ctx.typing():
                 self.current = self.queue[self._currentIndex]
                 self.current.source = discord.PCMVolumeTransformer(
-                    discord.FFmpegPCMAudio(self.current.stream_url, before_options=FFMPEG_BEFORE_OPTS["before_options"],
-                                           options=FFMPEG_BEFORE_OPTS["options"]), volume=0.5)
+                    discord.FFmpegPCMAudio(self.current.stream_url, before_options=FFMPEG_OPS["before_options"],
+                                           options=FFMPEG_OPS["options"]), volume=0.5)
 
                 if not self._accessDenied:
                     await self._ctx.send(embed=self.current.create_embed())
