@@ -8,6 +8,8 @@ import youtube_dl as ytdl
 from discord.ext import commands
 import datetime as dt
 import random
+import spotipy
+from spotipy import SpotifyClientCredentials
 
 ytdl.utils.bug_reports_message = lambda: ''
 
@@ -36,6 +38,7 @@ class YTDLSource:
     def __init__(self):
         self.videos = None
         self._results = list()
+        self.spotify = spotipy.Spotify(client_credentials_manager=SpotifyClientCredentials())
 
     async def extract_videos(self, search, requester, ctx: commands.Context, loop=None, timestamp=0):
         loop = loop or asyncio.get_event_loop()
@@ -69,6 +72,35 @@ class YTDLSource:
 
                     for video in videos:
                         self._results.append(Song(video, requester))
+
+    async def extract_spotify_videos(self, search, requester, ctx: commands.Context, loop=None, timestamp=0):
+        FFMPEG_BEFORE_OPTS["options"] = f'-vn -ss {timestamp}'
+        loop = loop or asyncio.get_event_loop()
+        tracks = list()
+        if search.startswith('https://open.spotify.com/track/'):
+            result = self.spotify.track(search)
+            tracks.append(result['name'] + result['artists'][0]['name'])
+            self.results.append(None)
+        elif search.startswith('https://open.spotify.com/playlist/'):
+            await ctx.send(embed=discord.Embed(
+                description="Playlist detected, gathering will take longer than usual",
+                color=discord.Color.blurple()
+            ))
+            results = self.spotify.playlist(search)
+            for result in results['tracks']['items']:
+                tracks.append(result['track']['name'] + " - " + result['track']['artists'][0]['name'] + " (Lyrics)")
+            self.results.append(None)
+        else:
+            self.results.append(-1)
+        if self.results[0] is None:
+            self.results.clear()
+            async with ctx.typing():
+                for track in tracks:
+                    YTDL_OPS["match_title"] = track
+                    with ytdl.YoutubeDL(YTDL_OPS) as ydl:
+                        entry = await loop.run_in_executor(None, ydl.extract_info, track, False)
+                        self.results.append(Song(entry["entries"][0], requester))
+
 
     @property
     def results(self):

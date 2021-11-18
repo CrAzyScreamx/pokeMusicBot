@@ -37,17 +37,24 @@ class musicCommands(commands.Cog):
         if search is None:
             return await ctx.send(
                 embed=self._embedSentence("You must provide a url or a search", discord.Color.from_rgb(0, 0, 0)))
-        if self.music is None or not int(ctx.message.guild.id) in list(self.music.keys()) or self.music[int(ctx.message.guild.id)] is None:
+        if self.music is None or not int(ctx.message.guild.id) in list(self.music.keys()) or self.music[
+            int(ctx.message.guild.id)] is None:
             await ctx.invoke(self._join, activate_reaction=False)
         message: discord.Message = ctx.message
         await message.add_reaction("☝")
         ytdlSource = YTDLSource()
-        await ytdlSource.extract_videos(search, ctx.author, ctx, self.client.loop)
-        self.music[int(ctx.message.guild.id)].addSongs(ytdlSource.results)
+        if search.startswith('https://open.spotify.com/track/') or search.startswith(
+                'https://open.spotify.com/playlist/'):
+            await ytdlSource.extract_spotify_videos(search, ctx.author, ctx, self.client.loop)
+        else:
+            await ytdlSource.extract_videos(search, ctx.author, ctx, self.client.loop)
         if ytdlSource.results[0] == -1:
+            await self.music[int(ctx.message.guild.id)].vc.disconnect()
             return await ctx.send(
                 embed=self._embedSentence(f"Unable to fetch URL Data",
                                           discord.Color.from_rgb(0, 0, 0)))
+        else:
+            self.music[int(ctx.message.guild.id)].addSongs(ytdlSource.results)
         if len(ytdlSource.results) == 1:
             return await ctx.send(
                 embed=self._embedSentence(f"Enqueued ``{ytdlSource.results[0].title}``", discord.Color.blurple()))
@@ -87,22 +94,25 @@ class musicCommands(commands.Cog):
 
     @commands.command(aliases=['queue', 'q'])
     async def _queue(self, ctx: commands.Context):
-        if self.music[int(ctx.message.guild.id)] is None:
+        if self.music is None or self.music[int(ctx.message.guild.id)] is None:
             return await ctx.send(
                 embed=self._embedSentence("Bot is not playing anything", discord.Color.from_rgb(0, 0, 0)))
         if len(self.music[int(ctx.message.guild.id)].queue) == 0:
-            return await ctx.send("```PokeMusic Queue\n```")
+            return await ctx.send(f"```{self.client.user.display_name} Queue\n```")
         self.music[int(ctx.message.guild.id)].page = 1
-        sen = f"```PokeMusic Queue - Page {self.music[int(ctx.message.guild.id)].page}\n-------------------\n"
+        sen = f"```{self.client.user.display_name} Queue - Page {self.music[int(ctx.message.guild.id)].page}\n-------------------\n"
         for i in range(min(25, len(self.music[int(ctx.message.guild.id)].queue))):
             sen += str(i + 1) + ". " + self.music[int(ctx.message.guild.id)].queue[i].title
             sen += "\n"
         loopstate = " Song is Looped" if self.music[int(ctx.message.guild.id)].current.loop else " Song is not Looped"
         queueLoop = "Queue is Looped" if self.music[int(ctx.message.guild.id)].loop else "Queue is not Looped"
-        currentSong = self.music[int(ctx.message.guild.id)].current.title + f"(#{self.music[int(ctx.message.guild.id)].currentIndex+1})"
+        currentSong = self.music[
+                          int(ctx.message.guild.id)].current.title + f"(#{self.music[int(ctx.message.guild.id)].currentIndex + 1})"
         nextSong = "\nNext Song -> "
-        if self.music[int(ctx.message.guild.id)].next is not None and self.music[int(ctx.message.guild.id)].currentIndex != len(self.music[int(ctx.message.guild.id)].queue):
-            nextSong += self.music[int(ctx.message.guild.id)].next.title + f"(#{self.music[int(ctx.message.guild.id)].currentIndex + 2})"
+        if self.music[int(ctx.message.guild.id)].next is not None and self.music[
+            int(ctx.message.guild.id)].currentIndex != len(self.music[int(ctx.message.guild.id)].queue):
+            nextSong += self.music[
+                            int(ctx.message.guild.id)].next.title + f"(#{self.music[int(ctx.message.guild.id)].currentIndex + 2})"
         else:
             nextSong += "None"
         sen += f"-----------------------------------------------\n{loopstate}\t\t{queueLoop}\n-------------------\nCurrent Song -> {currentSong}{nextSong}```"
@@ -123,16 +133,18 @@ class musicCommands(commands.Cog):
             return await ctx.send(embed=self._embedSentence("Index must be a number!", discord.Color.from_rgb(0, 0, 0)))
         index = int(index)
         if 1 < index <= len(self.music[int(ctx.message.guild.id)].queue):
-            await ctx.send(embed=self._embedSentence(f"Song ``{self.music[int(ctx.message.guild.id)].queue[index - 1].title}`` has been deleted",
-                                                     discord.Color.blurple()))
+            await ctx.send(embed=self._embedSentence(
+                f"Song ``{self.music[int(ctx.message.guild.id)].queue[index - 1].title}`` has been deleted",
+                discord.Color.blurple()))
             self.music[int(ctx.message.guild.id)].deleteSong(index)
         else:
             if len(self.music[int(ctx.message.guild.id)].queue) == 1 and index == 1:
                 return await ctx.send(
                     embed=self._embedSentence("Cannot delete the only song", discord.Color.from_rgb(0, 0, 0)))
             else:
-                return await ctx.send(embed=self._embedSentence(f"Index must be between 2 and {len(self.music[int(ctx.message.guild.id)].queue)}",
-                                                                discord.Color.from_rgb(0, 0, 0)))
+                return await ctx.send(embed=self._embedSentence(
+                    f"Index must be between 2 and {len(self.music[int(ctx.message.guild.id)].queue)}",
+                    discord.Color.from_rgb(0, 0, 0)))
 
     @commands.command(aliases=['shuffle'])
     async def _shuffle(self, ctx: commands.Context):
@@ -169,7 +181,9 @@ class musicCommands(commands.Cog):
             return await ctx.send(
                 embed=self._embedSentence("Number must be an integer!", discord.Color.from_rgb(0, 0, 0)))
         if not 0 < index <= len(self.music[int(ctx.message.guild.id)].queue):
-            return await ctx.send(embed=self._embedSentence(f"Number must be between 1 and {len(self.music[int(ctx.message.guild.id)].queue)}", discord.Color.from_rgb(0, 0, 0)))
+            return await ctx.send(embed=self._embedSentence(
+                f"Number must be between 1 and {len(self.music[int(ctx.message.guild.id)].queue)}",
+                discord.Color.from_rgb(0, 0, 0)))
         self.music[int(ctx.message.guild.id)].jumpTo(index)
 
     @_pause.before_invoke
@@ -184,7 +198,8 @@ class musicCommands(commands.Cog):
     @_jumpTo.before_invoke
     async def ensure_state(self, ctx):
         if self.music[int(ctx.message.guild.id)] is None or self.music[int(ctx.message.guild.id)].vc and not \
-                self.music[int(ctx.message.guild.id)].vc.is_playing() and not self.music[int(ctx.message.guild.id)].vc.is_paused():
+                self.music[int(ctx.message.guild.id)].vc.is_playing() and not self.music[
+            int(ctx.message.guild.id)].vc.is_paused():
             await ctx.send(embed=self._embedSentence("Bot is not playing anything!", discord.Color.from_rgb(0, 0, 0)))
             raise NotPlayingAnything("Bot is not playing anything yet!")
         if not ctx.author.voice or ctx.author.voice.channel is not self.music[int(ctx.message.guild.id)].vc.channel:
@@ -216,22 +231,26 @@ class musicCommands(commands.Cog):
                 await msg.clear_reaction(r)
             if self.music[int(reaction.message.guild.id)].page == 1:
                 await msg.add_reaction('⏭')
-            elif 1 < self.music[int(reaction.message.guild.id)].page < self.music[int(reaction.message.guild.id)].countPage():
+            elif 1 < self.music[int(reaction.message.guild.id)].page < self.music[
+                int(reaction.message.guild.id)].countPage():
                 await msg.add_reaction('⏭')
                 await msg.add_reaction('⏮')
-            elif self.music[int(reaction.message.guild.id)].countPage() == self.music[int(reaction.message.guild.id)].page:
+            elif self.music[int(reaction.message.guild.id)].countPage() == self.music[
+                int(reaction.message.guild.id)].page:
                 await msg.add_reaction('⏮')
 
     async def editQueue(self, msg: discord.Message, trackList: List[Song]):
-        sen = f"```PokeMusic Queue - Page {self.music[int(msg.guild.id)].page}\n-------------------\n"
+        sen = f"```{self.client.user.display_name} Queue - Page {self.music[int(msg.guild.id)].page}\n-------------------\n"
         for i in range(len(trackList)):
-            sen += str((i + 1) + ((self.music[int(msg.guild.id)].page-1) * 25)) + ". " + trackList[i].title
+            sen += str((i + 1) + ((self.music[int(msg.guild.id)].page - 1) * 25)) + ". " + trackList[i].title
             sen += "\n"
         loopstate = " Song is Looped" if self.music[int(msg.guild.id)].current.loop else " Song is not Looped"
         queueLoop = "Queue is Looped" if self.music[int(msg.guild.id)].loop else "Queue is not Looped"
-        currentSong = self.music[int(msg.guild.id)].current.title + f"(#{self.music[int(msg.guild.id)].currentIndex+1})"
-        nextSong = f"\nNext Song -> {self.music[int(msg.guild.id)].next.title}(#{self.music[int(msg.guild.id)].currentIndex + 2})" if self.music[int(msg.guild.id)].currentIndex != len(
-            self.music[int(msg.guild.id)].queue) else None
+        currentSong = self.music[
+                          int(msg.guild.id)].current.title + f"(#{self.music[int(msg.guild.id)].currentIndex + 1})"
+        nextSong = f"\nNext Song -> {self.music[int(msg.guild.id)].next.title}(#{self.music[int(msg.guild.id)].currentIndex + 2})" if \
+            self.music[int(msg.guild.id)].currentIndex != len(
+                self.music[int(msg.guild.id)].queue) else None
         sen += f"-----------------------------------------------\n{loopstate}\t\t{queueLoop}\n-------------------\nCurrent Song -> {currentSong}{nextSong}```"
         await msg.edit(content=sen)
 
