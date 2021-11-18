@@ -52,9 +52,7 @@ class YTDLSource:
                 except Exception:
                     info = -1
                 videos = list()
-                if info == -1:
-                    self.results.append(-1)
-                else:
+                if info != -1:
                     if '_type' in info and info["_type"] == "playlist":
                         await ctx.send(embed=discord.Embed(
                             description="Playlist detected, gathering will take longer than usual",
@@ -74,7 +72,6 @@ class YTDLSource:
                         self._results.append(Song(video, requester))
 
     async def extract_spotify_videos(self, search, requester, ctx: commands.Context, loop=None, timestamp=0):
-        self.results.append(None)
         FFMPEG_BEFORE_OPTS["options"] = f'-vn -ss {timestamp}'
         loop = loop or asyncio.get_event_loop()
         tracks = list()
@@ -105,14 +102,10 @@ class YTDLSource:
             results = self.spotify.artist_top_tracks(search)
             for result in results['tracks']:
                 tracks.append(result['name'] + " - " + result['artists'][0]['name'] + " (Lyrics)")
-        else:
-            self.results[0] = -1
-        if self.results[0] is None:
-            self.results.clear()
-            async with ctx.typing():
-                entries = await loop.run_in_executor(None, self._searchTracks, tracks)
-                for entry in entries:
-                    self.results.append(Song(entry["entries"][0], requester))
+        async with ctx.typing():
+            entries = await loop.run_in_executor(None, self._searchTracks, tracks)
+            for entry in entries:
+                self.results.append(Song(entry["entries"][0], requester))
 
 
     @staticmethod

@@ -34,27 +34,28 @@ class musicCommands(commands.Cog):
 
     @commands.command(aliases=['play', 'p'])
     async def _stream(self, ctx: commands.Context, *, search: str = None):
+        activate = False
         if search is None:
             return await ctx.send(
                 embed=self._embedSentence("You must provide a url or a search", discord.Color.from_rgb(0, 0, 0)))
         if self.music is None or not int(ctx.message.guild.id) in list(self.music.keys()) or self.music[
             int(ctx.message.guild.id)] is None:
-            await ctx.invoke(self._join, activate_reaction=False)
+            activate = True
         message: discord.Message = ctx.message
         await message.add_reaction("☝")
         ytdlSource = YTDLSource()
-        if search.startswith(tuple(['https://open.spotify.com/track/', 'https://open.spotify.com/playlist/', 'https://open.spotify.com/album/', "https://open.spotify.com/artist/"])):
+        if search.startswith(tuple(['https://open.spotify.com/track/', 'https://open.spotify.com/playlist/',
+                                    'https://open.spotify.com/album/', "https://open.spotify.com/artist/"])):
             await ytdlSource.extract_spotify_videos(search, ctx.author, ctx, self.client.loop)
         elif search.startswith('https://www.youtube.com/'):
             await ytdlSource.extract_videos(search, ctx.author, ctx, self.client.loop)
-        if ytdlSource.results[0] == -1:
-            if len(self.music[int(ctx.message.guild.id)].queue) == 0:
-                await self.music[int(ctx.message.guild.id)].vc.disconnect()
+        else:
             return await ctx.send(
                 embed=self._embedSentence(f"Unable to fetch URL Data",
                                           discord.Color.from_rgb(0, 0, 0)))
-        else:
-            self.music[int(ctx.message.guild.id)].addSongs(ytdlSource.results)
+        if activate:
+            await ctx.invoke(self._join, activate_reaction=False)
+        self.music[int(ctx.message.guild.id)].addSongs(ytdlSource.results)
         if len(ytdlSource.results) == 1:
             return await ctx.send(
                 embed=self._embedSentence(f"Enqueued ``{ytdlSource.results[0].title}``", discord.Color.blurple()))
