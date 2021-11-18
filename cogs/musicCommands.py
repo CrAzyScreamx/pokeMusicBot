@@ -46,9 +46,9 @@ class musicCommands(commands.Cog):
         ytdlSource = YTDLSource()
         if search.startswith(tuple(['https://open.spotify.com/track/', 'https://open.spotify.com/playlist/',
                                     'https://open.spotify.com/album/', "https://open.spotify.com/artist/"])):
-            await ytdlSource.extract_spotify_videos(search, ctx, self.client.loop)
+            await ytdlSource.extract_spotify_videos(search, ctx.author, ctx, self.client.loop)
         elif search.startswith('https://www.youtube.com/') or not validators.url(search):
-            await ytdlSource.extract_videos(search, ctx, self.client.loop)
+            await ytdlSource.extract_videos(search, ctx.author, ctx, self.client.loop)
         else:
             return await ctx.send(
                 embed=self._embedSentence(f"Unable to fetch URL Data",
@@ -96,7 +96,6 @@ class musicCommands(commands.Cog):
     @commands.command(aliases=['queue', 'q'])
     async def _queue(self, ctx: commands.Context):
         if self.music is None or self.music[int(ctx.message.guild.id)] is None:
-            print("WTF")
             return await ctx.send(
                 embed=self._embedSentence("Bot is not playing anything", discord.Color.from_rgb(0, 0, 0)))
         if len(self.music[int(ctx.message.guild.id)].queue) == 0:
