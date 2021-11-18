@@ -95,11 +95,20 @@ class YTDLSource:
         if self.results[0] is None:
             self.results.clear()
             async with ctx.typing():
-                for track in tracks:
-                    YTDL_OPS["match_title"] = track
-                    with ytdl.YoutubeDL(YTDL_OPS) as ydl:
-                        entry = await loop.run_in_executor(None, ydl.extract_info, track, False)
-                        self.results.append(Song(entry["entries"][0], requester))
+                entries = await loop.run_in_executor(None, self._searchTracks, tracks)
+                for entry in entries:
+                    self.results.append(Song(entry["entries"][0], requester))
+
+
+    @staticmethod
+    def _searchTracks(tracks: List[str]):
+        entries = list()
+        for track in tracks:
+            YTDL_OPS["match_title"] = track
+            with ytdl.YoutubeDL(YTDL_OPS) as ydl:
+                entry = ydl.extract_info(track, download=False)
+                entries.append(entry)
+        return entries
 
 
     @property
