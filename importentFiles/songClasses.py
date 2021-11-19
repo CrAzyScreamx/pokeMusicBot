@@ -341,8 +341,8 @@ class Queue:
                 if self._skipping or self._backing:
                     self._vc.stop()
                     break
-                self._HTTPERROR += 1
                 await asyncio.sleep(1)
+                self._HTTPERROR += 1
             if 1 <= self._HTTPERROR < 2 and not self._skipping and not self._backing:
                 self._accessDenied = True
                 ytdlSource = YTDLSource()

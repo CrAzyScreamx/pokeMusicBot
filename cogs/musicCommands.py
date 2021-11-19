@@ -38,6 +38,10 @@ class musicCommands(commands.Cog):
         if search is None:
             return await ctx.send(
                 embed=self._embedSentence("You must provide a url or a search", discord.Color.from_rgb(0, 0, 0)))
+        if not ctx.author.voice:
+            await ctx.send(
+                embed=self._embedSentence("You must be connected to a channel", discord.Color.from_rgb(0, 0, 0)))
+            raise NotPlayingAnything("User not connected to the channel")
         if self.music is None or not int(ctx.message.guild.id) in list(self.music.keys()) or self.music[
             int(ctx.message.guild.id)] is None:
             activate = True
@@ -126,7 +130,7 @@ class musicCommands(commands.Cog):
         self.music[int(ctx.message.guild.id)].clear()
         await ctx.message.add_reaction('👌')
 
-    @commands.command(aliases=['delete', 'del'])
+    @commands.command(aliases=['delete', 'del', 'remove'])
     async def _delete(self, ctx: commands.Context, index):
         try:
             index = int(index)
