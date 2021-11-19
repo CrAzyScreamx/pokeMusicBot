@@ -57,7 +57,7 @@ class musicCommands(commands.Cog):
             return await ctx.send(
                 embed=self._embedSentence(f"Unable to fetch URL Data",
                                           discord.Color.from_rgb(0, 0, 0)))
-        if activate:
+        if activate or self.music[int(ctx.message.guild.id)] is None:
             await ctx.invoke(self._join, activate_reaction=False)
         self.music[int(ctx.message.guild.id)].addSongs(ytdlSource.results)
         if len(ytdlSource.results) == 1:
