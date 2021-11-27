@@ -89,7 +89,7 @@ class musicCommands(commands.Cog):
         currentSong: Song = self.music[int(ctx.message.guild.id)].current
         await ctx.send(embed=currentSong.create_embed())
 
-    @commands.command(aliases=['loopsong', 'ls'])
+    @commands.command(aliases=['loopsong', 'ls', 'loop'])
     async def _loopSong(self, ctx: commands.Context):
         self.music[int(ctx.message.guild.id)].current.loop = not self.music[int(ctx.message.guild.id)].current.loop
         if self.music[int(ctx.message.guild.id)].current.loop:
