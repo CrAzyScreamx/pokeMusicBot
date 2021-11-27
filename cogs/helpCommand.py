@@ -15,15 +15,15 @@ class helpCommand(commands.Cog):
         )
         prefix = "+"
         desc = f"```Commands for {self.client.user.display_name}:\n\n" \
-               f"1. {prefix}join (aliases: {prefix}j, {prefix}summon) - Joins the channel\n" \
-               f"2. {prefix}leave (aliases: {prefix}dc, {prefix}disconnect) - Leaves the channel\n" \
-               f"3. {prefix}play [search] (aliases: {prefix}p) - Plays music ( can be link from spotify or youtube or you can just search for a name )\n" \
-               f"4. {prefix}pause - Pauses current playing music\n" \
-               f"5. {prefix}resume - Resumes current playing music\n" \
-               f"6. {prefix}np (aliases: {prefix}nowplaying, {prefix}currentsong, {prefix}current) - Displays the current playing song\n" \
-               f"7. {prefix}loop (aliases: {prefix}loopsong, {prefix}ls) - Loops current playing song\n" \
-               f"8. {prefix}queue (aliases: {prefix}q) - displays current queue\n" \
-               f"9. {prefix}clear (aliases: {prefix}clearqueue) - clears current queue\n" \
+               f"1.  {prefix}join (aliases: {prefix}j, {prefix}summon) - Joins the channel\n" \
+               f"2.  {prefix}leave (aliases: {prefix}dc, {prefix}disconnect) - Leaves the channel\n" \
+               f"3.  {prefix}play [search] (aliases: {prefix}p) - Plays music ( can be link from spotify or youtube or you can just search for a name )\n" \
+               f"4.  {prefix}pause - Pauses current playing music\n" \
+               f"5.  {prefix}resume - Resumes current playing music\n" \
+               f"6.  {prefix}np (aliases: {prefix}nowplaying, {prefix}currentsong, {prefix}current) - Displays the current playing song\n" \
+               f"7.  {prefix}loop (aliases: {prefix}loopsong, {prefix}ls) - Loops current playing song\n" \
+               f"8.  {prefix}queue (aliases: {prefix}q) - displays current queue\n" \
+               f"9.  {prefix}clear (aliases: {prefix}clearqueue) - clears current queue\n" \
                f"10. {prefix}delete [index] (aliases: {prefix}del, {prefix}remove) - Deletes chosen song from the queue\n" \
                f"11. {prefix}shuffle - shuffles the queue\n" \
                f"12. {prefix}skip (aliases: {prefix}s) - Skip current playing song\n" \
