@@ -4,7 +4,7 @@ from typing import List
 import validators
 
 import discord
-import youtube_dl as ytdl
+import yt_dlp as ytdl
 from discord.ext import commands
 import datetime as dt
 import random
@@ -17,7 +17,6 @@ YTDL_OPS = {
     'format': 'bestaudio/best',
     'extractaudio': True,
     'audioformat': 'mp3',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'ignoreerrors': False,
     'logtostderr': False,
@@ -48,7 +47,7 @@ class YTDLSource:
             FFMPEG_BEFORE_OPTS["options"] = f'-vn -ss {timestamp}'
             async with ctx.typing():
                 try:
-                    info = await loop.run_in_executor(None, ydl.extract_info, search, False, None, {}, False)
+                    info = await loop.run_in_executor(None, ydl.extract_info, search, False, False, None, False, False)
                 except Exception:
                     info = -1
                 videos = list()
@@ -110,10 +109,14 @@ class YTDLSource:
 
     @staticmethod
     def _searchTracks(tracks: List[str]):
+        count = 0
         entries = list()
         for track in tracks:
             YTDL_OPS["match_title"] = track
             with ytdl.YoutubeDL(YTDL_OPS) as ydl:
+                count+=1
+                print(count)
+                print(track)
                 entry = ydl.extract_info(track, download=False)
                 entries.append(entry)
         return entries
@@ -127,8 +130,13 @@ class YTDLSource:
 class Song:
 
     def __init__(self, video, requested_by):
-        video_format = video["formats"][0]
-        self.stream_url = video_format["url"]
+        video_format = video["formats"]
+        for fmt in video_format:
+            if fmt['format_id'] == '251':
+                self.stream_url = fmt['url']
+        for fmt in video_format:
+            if fmt['acodec'] != 'none':
+                self.stream_url = fmt['url']
         self.video_url = video["webpage_url"]
         self.title = video["title"]
         self.uploader = video["uploader"] if "uploader" in video else ""
