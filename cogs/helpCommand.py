@@ -9,10 +9,6 @@ class helpCommand(commands.Cog):
 
     @commands.command(aliases=['help', 'h'])
     async def _help(self, ctx):
-        embed = discord.Embed(
-            title=f"Help command for {self.client.user.display_name}",
-            color=discord.Color.blurple()
-        )
         prefix = "+"
         desc = f"```Commands for {self.client.user.display_name}:\n\n" \
                f"1.  {prefix}join (aliases: {prefix}j, {prefix}summon) - Joins the channel\n" \
