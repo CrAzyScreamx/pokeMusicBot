@@ -3,12 +3,9 @@ from typing import Dict
 import discord
 from discord.ext import commands
 from discord.utils import get
-from discord_slash.utils.manage_commands import create_option, create_choice
-
 from songPackage.SourceExtractor import YTDLSource
 from songPackage.NodeClasses import SongQueue
 from discord.ui import Button, View
-from discord_slash import cog_ext, SlashContext
 
 emojis = ['✅', '❌']
 

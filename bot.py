@@ -1,12 +1,10 @@
 import os
 import discord
 from discord.ext import commands
-from discord_slash import SlashCommand
 
 client = commands.Bot(command_prefix=commands.when_mentioned_or("+"), case_insensitive=True,
                       intents=discord.Intents.all())
 client.remove_command('help')
-slash = SlashCommand(client, sync_commands=True, sync_on_cog_reload=True)
 
 
 @client.command()
