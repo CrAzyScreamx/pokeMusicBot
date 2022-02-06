@@ -37,7 +37,7 @@ class SongQueue:
         self._curr = None
         self._skip = False
         self._back = False
-        self._passed = list()
+        self._passed = []
         self.loopedTask = None
         self._loop = False
 
@@ -91,7 +91,10 @@ class SongQueue:
         if self.last is None:
             self.head = SongNode(data)
             self.last = self.head
-            if not self.loopedTask in asyncio.all_tasks(self.client.loop) or self.loopedTask is None:
+            if (
+                    self.loopedTask not in asyncio.all_tasks(self.client.loop)
+                    or self.loopedTask is None
+            ):
                 self.loopedTask = self.client.loop.create_task(self.create_loop_task())
         else:
             self.last.next = SongNode(data)
@@ -105,15 +108,14 @@ class SongQueue:
     def dequeue(self):
         if self.head is None:
             return None
+        temp = self.head.data
+        self.head = self.head.next
+        if self.head:
+            self.head.prev = None
         else:
-            temp = self.head.data
-            self.head = self.head.next
-            if self.head:
-                self.head.prev = None
-            else:
-                self.last = None
-            self._passed.append(temp)
-            return temp
+            self.last = None
+        self._passed.append(temp)
+        return temp
 
     def VIPAccess(self, data):
         if self.last is None:
@@ -134,7 +136,7 @@ class SongQueue:
         temp = self.head
         count = 0
         while temp:
-            count = count + 1
+            count += 1
             temp = temp.next
         return count
 
@@ -142,7 +144,7 @@ class SongQueue:
         return self.head is None
 
     def __str__(self):
-        queue = list()
+        queue = []
         curr = f"1. {self._curr.title} - ({self._curr.convertedDur})\n"
         count = 2
         temp: SongNode = self.head
@@ -153,28 +155,30 @@ class SongQueue:
                 curr = ""
             count += 1
             temp = temp.next
-        if len(queue) == 0:
+        if not queue:
             queue.append(curr)
         return queue
 
-    def removeSong(self, index):
-        if self.last is None:
+    def __delete__(self, index):
+        return None if self.last is None else self._recDel(index, 1)
+
+    def _recDel(self, index, currIndex):
+        if self.head is None:
             return None
+        if index != currIndex:
+            return self._recDel(index, currIndex + 1)
+        temp = self.head
+        self.head = self.head.next
+        if self.head:
+            self.head.prev = None
         else:
-            temp = self.head
-            for i in range(index):
-                temp = temp.next
-            nodeData = temp.data
-            prevSong = temp.prev
-            nextSong = temp.next
-            temp.prev.next = nextSong
-            temp.next.prev = prevSong
-            return nodeData
+            self.last = None
+        return temp.data
 
     def toList(self):
         if self.last is None:
             return list()
-        nodeList = list()
+        nodeList = []
         temp = self.head
         while temp:
             nodeList.append(temp.data)
@@ -184,9 +188,7 @@ class SongQueue:
 
     def shuffle(self, fromPointer=0):
         nodeList: List = self.toList()
-        currList: List = list()
-        for i in range(fromPointer):
-            currList.append(nodeList.pop(i))
+        currList: List = [nodeList.pop(i) for i in range(fromPointer)]
         random.shuffle(nodeList)
         nodeList += currList
         self.clear()
@@ -198,7 +200,7 @@ class SongQueue:
         current = self.head
         # This is require to keep track of the prev Node
         prev = None
-        duplicate_dict = dict()
+        duplicate_dict = {}
         while current:
             if current.data.title not in duplicate_dict:
                 duplicate_dict[current.data.title] = None
@@ -210,12 +212,6 @@ class SongQueue:
 
             current = current.next
         self.dequeue()
-
-    def __index__(self, data):
-        try:
-            return self.toList().index(data)
-        except ValueError:
-            return -1
 
     async def create_loop_task(self):
         while True:
@@ -249,11 +245,13 @@ class SongQueue:
                     self.vc.stop()
                     break
                 await asyncio.sleep(1)
+
         if self._loop:
             for data in self._passed:
                 self.enqueue(data)
             self._passed.clear()
             self.loopedTask = self.client.loop.create_task(self.create_loop_task())
         else:
+            self.vc.cleanup()
             asyncio.run_coroutine_threadsafe(self.vc.disconnect(),
                                              self.client.loop)

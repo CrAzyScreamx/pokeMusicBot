@@ -14,7 +14,7 @@ class MusicCommands(commands.Cog):
 
     def __init__(self, client):
         self.client = client
-        self.music: Dict[int, SongQueue] = dict()
+        self.music: Dict[int, SongQueue] = {}
 
     @commands.command(aliases=['join', 'j', 'summon'])
     async def _join(self, ctx: commands.Context, activate=True):
@@ -33,20 +33,27 @@ class MusicCommands(commands.Cog):
                 description=f"{emojis[1]} Bot is already connected to a channel"))
         if activate:
             await msg.add_reaction("👌")
-        vc = await ctx.author.voice.channel.connect()
-        self.music = self.music or dict()
-        self.music[gid] = SongQueue(self.client, vc, ctx)
+        if gid not in self.music.keys() and not self.is_connected(ctx):
+            vc = await ctx.author.voice.channel.connect()
+            self.music = self.music or dict()
+            self.music[gid] = SongQueue(self.client, vc, ctx)
+
 
     @commands.command(aliases=['l', 'dc', 'leave'])
     async def _leave(self, ctx: commands.Context):
         msg, gid = self.getGuild(ctx)
-        if not ctx.author.voice or not gid in self.music.keys() or not ctx.author.voice.channel is self.music[
-            gid].vc.channel:
+        if (
+            not ctx.author.voice
+            or gid not in self.music.keys()
+            or ctx.author.voice.channel is not self.music[gid].vc.channel
+        ):
             return await ctx.send(embed=discord.Embed(
                 description="You must be connected to the same channel as the bot",
                 color=discord.Color.from_rgb(0, 0, 0)))
-        self.music[gid].loopedTask.cancel()
+        if self.music[gid].loopedTask is not None:
+            self.music[gid].loopedTask.cancel()
         await ctx.message.add_reaction('👋')
+        self.music[gid].vc.cleanup()
         await self.music[gid].vc.disconnect()
         self.music.pop(gid)
 
@@ -165,30 +172,27 @@ class MusicCommands(commands.Cog):
         await msg.add_reaction('👌')
 
     @commands.command(aliases=['delete', 'del', 'remove'])
-    async def _delete(self, ctx: commands.Context, index):
+    async def _delete(self, ctx: commands.Context, index: int):
         msg, gid = self.getGuild(ctx)
-        if not self.music[gid].vc.is_playing() and not self.music[gid].vc.is_paused():
+        if not self.is_connected(ctx) or not self.music[gid].vc.is_playing():
             return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Bot must be playing something",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        try:
-            index = int(index)
-        except ValueError:
+                description=f"{emojis[1]} No Audio is being played"
+            ))
+        if index == 1:
             return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Index must be a number",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        index = int(index)
-        if 1 < index <= self.music[gid].__sizeof__():
-            song = self.music[gid].removeSong(index)
+                description=f"{emojis[1]} You can't delete the current song"
+            ))
+        if index > self.music[gid].__sizeof__()+1 or index < 1:
             return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[0]} Song ``{song.title}`` has been deleted"))
-        elif self.music[gid].__sizeof__() == 1 == index:
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Cannot delete the only song",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        else:
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} You must choose a number between 1 and {self.music[gid].__sizeof__()}"))
+                description=f"{emojis[1]} You must choose an index between 1 and {self.music[gid].__sizeof__()+1}"
+            ))
+        await msg.add_reaction('👌')
+        removedSong: Song = self.music[gid].__delete__(index-1)
+        await ctx.send(embed=discord.Embed(
+            description=f"{emojis[1]} Song {removedSong.title} has been deleted"
+        ))
+
+
 
     @commands.command(aliases=['shuffle'])
     async def _shuffle(self, ctx: commands.Context):
@@ -235,7 +239,6 @@ class MusicCommands(commands.Cog):
                 color=discord.Color.from_rgb(0, 0, 0)))
         self.music[gid].removeDupes()
         await msg.add_reaction('👍')
-
 
     @_removeDupes.before_invoke
     @_loopqueue.before_invoke

@@ -38,7 +38,7 @@ class YTDLSource:
 
     def __init__(self):
         self.videos = None
-        self._results = list()
+        self._results = []
         self.spotify = spotipy.Spotify(client_credentials_manager=SpotifyClientCredentials())
 
     async def extract_info(self, search: str, ctx: commands.Context, loop=None):
@@ -67,7 +67,7 @@ class YTDLSource:
                 info = await loop.run_in_executor(None, ydl.extract_info, search, False, False, None, False, False)
             except Exception:
                 return
-            videos = list()
+            videos = []
             if '_type' in info and info["_type"] == "playlist":
                 await ctx.send(embed=self._detectedSen("Playlist"))
             info = await loop.run_in_executor(None, ydl.extract_info, search, False)
@@ -84,20 +84,21 @@ class YTDLSource:
                 self._results.append(Song(video, requester))
 
     async def _extract_spotify(self, search: str, ctx: commands.Context, requester, loop):
-        tracks = list()
+        tracks = []
         if search.startswith('https://open.spotify.com/track/'):
             result = self.spotify.track(search)
             tracks.append(result['name'] + result['artists'][0]['name'])
         elif search.startswith('https://open.spotify.com/playlist/'):
             await ctx.send(embed=self._detectedSen("Playlist"))
             results = self.spotify.playlist(search)
-            for result in results:
+            for result in results['tracks']['items']:
                 tracks.append(result['track']['name'] + " - " + result['track']['artists'][0]['name'] + " (Lyrics)")
         elif search.startswith('https://open.spotify.com/album/'):
             await ctx.send(embed=self._detectedSen("Album"))
             results = self.spotify.album(search)
-            for result in results:
+            for result in results['tracks']['items']:
                 tracks.append(result['name'] + " - " + result['artists'][0]['name'] + " (Lyrics)")
+
         elif search.startswith('https://open.spotify.com/artist/'):
             await ctx.send(embed=self._detectedSen("Artists"))
             results = self.spotify.artist_top_tracks(search)
@@ -110,7 +111,7 @@ class YTDLSource:
     @staticmethod
     def _searchTracks(tracks: List[str]):
         count = 0
-        entries = list()
+        entries = []
         for track in tracks:
             YTDL_OPS["match_title"] = track
             with ytdl.YoutubeDL(YTDL_OPS) as ydl:
@@ -172,7 +173,7 @@ class Song:
         self._loop = value
 
     def createSongEmbed(self):
-        embed = (discord.Embed(
+        return (discord.Embed(
             title="Now Playing",
             description=f"``{self.title}``",
             color=discord.Color.blurple()
@@ -180,7 +181,6 @@ class Song:
                  .add_field(name="Duration", value=self._convertedDur)
                  .add_field(name="Requested By", value=self.requester.display_name)
                  .set_thumbnail(url=self.thumbnail))
-        return embed
 
 
 class UnableToFetchException(Exception):
