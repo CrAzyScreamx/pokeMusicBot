@@ -69,6 +69,8 @@ class MusicCommands(commands.Cog):
                 description=f"{emojis[1]} You must connected to a channel",
                 color=discord.Color.from_rgb(0, 0, 0)))
         if not self.is_connected(ctx):
+            if gid in self.music.keys():
+                self.music.pop(gid)
             await ctx.invoke(self._join, False)
         await msg.add_reaction("☝")
         ytdlSource = YTDLSource()
