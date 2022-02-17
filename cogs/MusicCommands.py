@@ -1,4 +1,5 @@
 from typing import Dict
+import re
 
 import discord
 from discord.ext import commands
@@ -242,6 +243,29 @@ class MusicCommands(commands.Cog):
         self.music[gid].removeDupes()
         await msg.add_reaction('👍')
 
+    @commands.command(aliases=['seek', 'seekTo'])
+    async def _seek(self, ctx: commands.Context, time: str):
+        msg, gid = self.getGuild(ctx)
+        if not self.music[gid].vc.is_playing() and not self.music[gid].vc.is_paused():
+            return await ctx.send(embed=discord.Embed(
+                description=f"{emojis[1]} Bot must be playing something",
+                color=discord.Color.from_rgb(0, 0, 0)))
+        # Check if string time matches hh:mm:ss or hh:mm format
+        if time.count(':') == 2:
+            time = time.split(':')
+            time = int(time[0]) * 3600 + int(time[1]) * 60 + int(time[2])
+        elif time.count(':') == 1:
+            time = time.split(':')
+            time = int(time[0]) * 60 + int(time[1])
+        else:
+            return await ctx.send(embed=discord.Embed(
+                description=f"{emojis[1]} Invalid time format",
+                color=discord.Color.from_rgb(0, 0, 0)))
+        self.music[gid].seek(time)
+        await msg.add_reaction('⏱')
+
+
+
     @_removeDupes.before_invoke
     @_loopqueue.before_invoke
     @_clear.before_invoke
@@ -254,6 +278,7 @@ class MusicCommands(commands.Cog):
     @_leave.before_invoke
     @_pause.before_invoke
     @_pause.before_invoke
+    @_seek.before_invoke
     async def ensure_state(self, ctx):
         if not ctx.author.voice:
             await ctx.send(embed=discord.Embed(

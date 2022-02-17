@@ -205,34 +205,44 @@ class SongQueue:
             current = current.next
         self.dequeue()
 
+    def seek(self, time: str):
+        self._curr.seek = time
+        FFMPEG_BEFORE_OPTS["options"] = f"-vn -ss {self._curr.seek}"
+
     async def create_loop_task(self):
         while True:
             if self.isEmpty():
                 self._curr = None
                 break
 
-            async with self.ctx.typing():
-                if self._curr is None:
-                    self._curr = self.dequeue()
-                elif self._skip:
-                    self._skip = False
-                    self._curr = self.dequeue()
-                elif len(self._passed) > 0 and self._back:
-                    self._back = False
-                    self.VIPAccess(self._passed.pop())
-                    self._curr = self.dequeue()
-                elif not self._curr.loop:
-                    self._curr = self.dequeue()
+            if self._curr is None or self._curr.seek == 0:
+                async with self.ctx.typing():
+                    if self._curr is None:
+                        self._curr = self.dequeue()
+                    elif self._skip:
+                        self._skip = False
+                        self._curr = self.dequeue()
+                    elif len(self._passed) > 0 and self._back:
+                        self._back = False
+                        self.VIPAccess(self._passed.pop())
+                        self._curr = self.dequeue()
+                    elif not self._curr.loop:
+                        self._curr = self.dequeue()
 
             self._curr.source = discord.PCMVolumeTransformer(
                 discord.FFmpegPCMAudio(self._curr.stream_url, before_options=FFMPEG_BEFORE_OPTS["before_options"],
                                        options=FFMPEG_BEFORE_OPTS["options"]), volume=0.5)
 
-            await self.ctx.send(embed=self._curr.createSongEmbed())
+            if self._curr.seek != 0:
+                FFMPEG_BEFORE_OPTS["options"] = '-vn -ss 0'
+                self._curr.seek = 0
+                self.dequeue()
+            else:
+                await self.ctx.send(embed=self._curr.createSongEmbed())
             self.vc.play(self._curr.source)
             while self.vc.is_playing() or self.vc.is_paused():
-                if self._skip or self._back:
-                    if self._back:
+                if self._skip or self._back or self._curr.seek != 0:
+                    if self._back or self._curr.seek != 0:
                         self.VIPAccess(self._passed.pop())
                     self.vc.stop()
                     break

@@ -151,6 +151,15 @@ class Song:
         self._convertedDur = dt.timedelta(seconds=self._duration)
         self._source = None
         self._loop = False
+        self._seek = 0
+
+    @property
+    def seek(self):
+        return self._seek
+
+    @seek.setter
+    def seek(self, value):
+        self._seek = value
 
     @property
     def convertedDur(self):
