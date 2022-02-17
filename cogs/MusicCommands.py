@@ -184,14 +184,14 @@ class MusicCommands(commands.Cog):
             return await ctx.send(embed=discord.Embed(
                 description=f"{emojis[1]} You can't delete the current song"
             ))
-        if index > self.music[gid].__sizeof__()+1 or index < 1:
+        if index > self.music[gid].__sizeof__()+1 or index < 2:
             return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} You must choose an index between 1 and {self.music[gid].__sizeof__()+1}"
+                description=f"{emojis[1]} You must choose an index between 2 and {self.music[gid].__sizeof__()+1}"
             ))
         await msg.add_reaction('👌')
-        removedSong: Song = self.music[gid].__delete__(index-1)
+        removedSong: Song = self.music[gid].__delete__(index-2)
         await ctx.send(embed=discord.Embed(
-            description=f"{emojis[1]} Song {removedSong.title} has been deleted"
+            description=f"{emojis[1]} Song ``{removedSong.title}`` has been deleted"
         ))
 
 

@@ -160,20 +160,12 @@ class SongQueue:
         return queue
 
     def __delete__(self, index):
-        return None if self.last is None else self._recDel(index, 1)
-
-    def _recDel(self, index, currIndex):
-        if self.head is None:
-            return None
-        if index != currIndex:
-            return self._recDel(index, currIndex + 1)
-        temp = self.head
-        self.head = self.head.next
-        if self.head:
-            self.head.prev = None
-        else:
-            self.last = None
-        return temp.data
+        songList = self.toList()
+        songData = songList[index]
+        songList.pop(index)
+        self.clear()
+        self.enqueueList(songList)
+        return songData
 
     def toList(self):
         if self.last is None:
@@ -183,8 +175,8 @@ class SongQueue:
         while temp:
             nodeList.append(temp.data)
             temp = temp.next
-        print(nodeList)
         return nodeList
+
 
     def shuffle(self, fromPointer=0):
         nodeList: List = self.toList()
