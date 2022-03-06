@@ -160,12 +160,24 @@ class SongQueue:
         return queue
 
     def __delete__(self, index):
-        songList = self.toList()
-        songData = songList[index]
-        songList.pop(index)
-        self.clear()
-        self.enqueueList(songList)
-        return songData
+        if self.head is None:
+            return
+        if index == 0:
+            self.head = self.head.next
+            return self.head
+        pos = 0
+        current = self.head
+        prev = self.head
+        temp = self.head
+        while current is not None:
+            if pos == index:
+                temp = current.next
+                break
+            prev = current
+            current = current.next
+            pos += 1
+        prev.next = temp
+        return prev.data
 
     def toList(self):
         if self.last is None:
@@ -184,8 +196,7 @@ class SongQueue:
         random.shuffle(nodeList)
         nodeList += currList
         self.clear()
-        for data in nodeList:
-            self.enqueue(data)
+        self.enqueueList(nodeList)
 
     def removeDupes(self):
         self.VIPAccess(self._curr)
@@ -226,7 +237,7 @@ class SongQueue:
                         self._back = False
                         self.VIPAccess(self._passed.pop())
                         self._curr = self.dequeue()
-                    elif not self._curr.loop:
+                    elif self._curr is not None and not self._curr.loop:
                         self._curr = self.dequeue()
 
             self._curr.source = discord.PCMVolumeTransformer(
