@@ -175,10 +175,6 @@ class Song:
         return self._convertedDur
 
     @property
-    def duration(self):
-        return self._duration
-
-    @property
     def source(self):
         return self._source
 

@@ -250,6 +250,7 @@ class MusicCommands(commands.Cog):
             return await ctx.send(embed=discord.Embed(
                 description=f"{emojis[1]} Bot must be playing something",
                 color=discord.Color.from_rgb(0, 0, 0)))
+        # Check if string time matches hh:mm:ss or hh:mm format
         if time.count(':') == 2:
             time = time.split(':')
             time = int(time[0]) * 3600 + int(time[1]) * 60 + int(time[2])
@@ -258,11 +259,7 @@ class MusicCommands(commands.Cog):
             time = int(time[0]) * 60 + int(time[1])
         else:
             return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Invalid time format ( hh:mm:ss or hh:mm )",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        if self.music[gid].curr.duration < time:
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Time is too big for the song ( {self.music[gid].curr.convertedDur} )",
+                description=f"{emojis[1]} Invalid time format",
                 color=discord.Color.from_rgb(0, 0, 0)))
         self.music[gid].seek(time)
         await msg.add_reaction('⏱')
