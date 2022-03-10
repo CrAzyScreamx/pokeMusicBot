@@ -77,7 +77,9 @@ class YTDLSource:
                 entry = ydl.extract_info(single_page, download=False)
                 videos.append(entry)
             else:
-                videos.extend(iter(info["entries"]))
+                for entry in info["entries"]:
+                    videos.append(entry)
+
             for video in videos:
                 self._results.append(Song(video, requester))
 
@@ -89,30 +91,19 @@ class YTDLSource:
         elif search.startswith('https://open.spotify.com/playlist/'):
             await ctx.send(embed=self._detectedSen("Playlist"))
             results = self.spotify.playlist(search)
-            tracks.extend(
-                result['track']['name']
-                + " - "
-                + result['track']['artists'][0]['name']
-                + " (Lyrics)"
-                for result in results['tracks']['items']
-            )
-
+            for result in results['tracks']['items']:
+                tracks.append(result['track']['name'] + " - " + result['track']['artists'][0]['name'] + " (Lyrics)")
         elif search.startswith('https://open.spotify.com/album/'):
             await ctx.send(embed=self._detectedSen("Album"))
             results = self.spotify.album(search)
-            tracks.extend(
-                result['name'] + " - " + result['artists'][0]['name'] + " (Lyrics)"
-                for result in results['tracks']['items']
-            )
+            for result in results['tracks']['items']:
+                tracks.append(result['name'] + " - " + result['artists'][0]['name'] + " (Lyrics)")
 
         elif search.startswith('https://open.spotify.com/artist/'):
             await ctx.send(embed=self._detectedSen("Artists"))
             results = self.spotify.artist_top_tracks(search)
-            tracks.extend(
-                result['name'] + " - " + result['artists'][0]['name'] + " (Lyrics)"
-                for result in results['tracks']
-            )
-
+            for result in results['tracks']:
+                tracks.append(result['name'] + " - " + result['artists'][0]['name'] + " (Lyrics)")
         entries = await loop.run_in_executor(None, self._searchTracks, tracks)
         for entry in entries:
             self._results.append(Song(entry["entries"][0], requester))
