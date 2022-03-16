@@ -165,7 +165,11 @@ class MusicCommands(commands.Cog):
         view.add_item(btnAfter)
         view.add_item(btnBefore)
         if self.music[gid].msg:
-            await self.music[gid].msg.delete()
+            # This try checks if the message is already deleted
+            try:
+                await self.music[gid].msg.delete()
+            except Exception:
+                pass
         self.music[gid].msg = await ctx.send(startOfPage, view=view)
 
     @commands.command(aliases=['clearqueue', 'clearq', 'clear'])
@@ -256,11 +260,12 @@ class MusicCommands(commands.Cog):
             time = int(time[0]) * 3600 + int(time[1]) * 60 + int(time[2])
         elif time.count(':') == 1:
             time = time.split(':')
-            time = int(time[0]) * 60 + int(time[1])
+            time = int(time[0]) * 60 + int(time[1]) + 1
         else:
             return await ctx.send(embed=discord.Embed(
                 description=f"{emojis[1]} Invalid time format",
                 color=discord.Color.from_rgb(0, 0, 0)))
+        time = 1 if time == 0 else time
         self.music[gid].seek(time)
         await msg.add_reaction('⏱')
 
