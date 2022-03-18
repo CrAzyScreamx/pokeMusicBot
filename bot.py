@@ -20,6 +20,6 @@ async def re(ctx):
 
 for filename in os.listdir('./cogs'):
     if filename.endswith('.py'):
-        await client.load_extension(f'cogs.{filename[:-3]}')
+        client.load_extension(f'cogs.{filename[:-3]}')
 
 client.run(os.environ.get("TOKEN"))
