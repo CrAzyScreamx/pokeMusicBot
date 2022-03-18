@@ -1,4 +1,4 @@
-git+https://github.com/Rapptz/discord.py
+git+https://github.com/Pycord-Development/pycord
 validators>=0.18.2
 yt_dlp==2022.3.8.2
 mutagen>=1.45.1
