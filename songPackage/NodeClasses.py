@@ -211,7 +211,7 @@ class SongQueue:
 
     async def create_loop_task(self):
         while True:
-            if self.isEmpty():
+            if self.isEmpty() and self._curr.loop is False:
                 self._curr = None
                 break
 
