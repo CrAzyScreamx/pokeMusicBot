@@ -190,7 +190,7 @@ class SongQueue:
     def removeDupes(self):
         self.VIPAccess(self._curr)
         current = self.head
-        # This is require to keep track of the prev Node
+        # This is required to keep track of the prev Node
         prev = None
         duplicate_dict = {}
         while current:
@@ -228,6 +228,7 @@ class SongQueue:
                         self._curr = self.dequeue()
                     elif not self._curr.loop:
                         self._curr = self.dequeue()
+                        
 
             self._curr.source = discord.PCMVolumeTransformer(
                 discord.FFmpegPCMAudio(self._curr.stream_url, before_options=FFMPEG_BEFORE_OPTS["before_options"],

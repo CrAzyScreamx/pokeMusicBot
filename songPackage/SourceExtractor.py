@@ -19,13 +19,13 @@ YTDL_OPS = {
     'audioformat': 'mp3',
     'restrictfilenames': True,
     'nocheckcertificate': True,
-    'ignoreerrors': False,
+    'ignoreerrors': True,
     'logtostderr': False,
     'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
-    'playlistend': 25
+    'playlistend': 25,
 }
 
 FFMPEG_BEFORE_OPTS = {

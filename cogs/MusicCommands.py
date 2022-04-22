@@ -4,7 +4,7 @@ import re
 import discord
 from discord.ext import commands
 from discord.utils import get
-from songPackage.SourceExtractor import YTDLSource
+from songPackage.SourceExtractor import YTDLSource, Song
 from songPackage.NodeClasses import SongQueue
 from discord.ui import Button, View
 
