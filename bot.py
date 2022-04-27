@@ -2,11 +2,13 @@ import asyncio
 import os
 import discord
 from discord.ext import commands
+from dotenv import load_dotenv
 
 client = commands.Bot(command_prefix=commands.when_mentioned_or("+"), case_insensitive=True,
                       intents=discord.Intents.all())
 client.remove_command('help')
 
+load_dotenv("args.env")
 
 @client.command()
 async def re(ctx):
