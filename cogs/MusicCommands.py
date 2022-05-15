@@ -326,8 +326,8 @@ class MusicCommands(commands.Cog):
         return startOfPage
 
 
-def setup(client):
-    client.add_cog(MusicCommands(client))
+async def setup(client):
+    await client.add_cog(MusicCommands(client))
 
 
 class EnsureStateFailed(Exception):

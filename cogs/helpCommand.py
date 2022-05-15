@@ -1,3 +1,5 @@
+import os
+
 import discord
 from discord.ext import commands
 
@@ -29,6 +31,16 @@ class helpCommand(commands.Cog):
                f"Created By Amit#5475```"
         await ctx.send(desc)
 
+    @commands.command()
+    async def re(self, ctx):
+        if ctx.author.id == 231405897820143616:
+            for fileName in os.listdir('./cogs'):
+                if fileName.endswith('.py'):
+                    await self.client.reload_extension(f'cogs.{fileName[:-3]}')
+            msg = ctx.message
+            await msg.delete()
+            await ctx.author.send("Extensions Reloaded")
 
-def setup(client):
-    client.add_cog(helpCommand(client))
+
+async def setup(client):
+    await client.add_cog(helpCommand(client))
