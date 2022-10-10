@@ -1,5 +1,0 @@
-*.exe
-cogs/__pycache__/events.cpython-38.pyc
-cogs/__pycache__/musicCommands.cpython-38.pyc
-importentFiles/__pycache__/songClasses.cpython-38.pyc
-*.env

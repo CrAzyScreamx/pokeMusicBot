@@ -1,334 +1,245 @@
-from typing import Dict
-import re
+from typing import Dict, Union
 
-import discord
-from discord.ext import commands
-from discord.utils import get
-from songPackage.SourceExtractor import YTDLSource, Song
-from songPackage.NodeClasses import SongQueue
-from discord.ui import Button, View
+from discord.commands import Option
+from discord.ext.pages import Paginator
 
-emojis = ['✅', '❌']
+from configFiles.predicateChecks import *
+from configFiles.songManagers import Song
+from configFiles.songManagers.QueueManager import QueueManager
+from configFiles.songManagers.QueuePages import getQueueBook
+from configFiles.songManagers.SongExtractor import SongExtractor
+
+guild_ids = []
 
 
 class MusicCommands(commands.Cog):
 
-    def __init__(self, client):
-        self.client = client
-        self.music: Dict[int, SongQueue] = {}
+    def __init__(self, client: discord.Bot):
+        self.client: discord.Bot = client
+        self.songExtractor = SongExtractor(client.loop)
+        self.queues: Dict[int, QueueManager] = {}  # guild_id : QueueHolder
 
-    @commands.command(aliases=['join', 'j', 'summon'])
-    async def _join(self, ctx: commands.Context, activate=True):
-        if self.is_connected(ctx):
+    @commands.slash_command(name="join",
+                            description="Connects the bot to a channel",)
+    @isAuthorConnected()
+    @canBotConnect()
+    async def _join(self, ctx: ApplicationContext):
+        voice_client = await ctx.author.voice.channel.connect()
+        await ctx.respond(embed=self.createEmbed(f"👋 Successfully joined {ctx.author.voice.channel.name}, "
+                                                 f"type /play to start playing songs!"), ephemeral=True)
+        self.queues[ctx.guild.id] = QueueManager(voice_client=voice_client, ctx=ctx)
+
+    @commands.slash_command(name="leave",
+                            description="Disconnects the bot from a channel")
+    @isAuthorConnected()
+    @canBotDisconnect()
+    @isSameChannel()
+    async def _leave(self, ctx: ApplicationContext):
+        await ctx.voice_client.disconnect(force=True)
+        await ctx.respond(embed=self.createEmbed(f"🤙 Successfully left {ctx.author.voice.channel.name}, Cya!"),
+                          ephemeral=True)
+        self.queues[ctx.guild.id].player.cancel()
+
+    @commands.slash_command(name="play",
+                            description="Plays a song depends on the search (Spotify and YT)")
+    @isAuthorConnected()
+    @isSameChannel()
+    async def _stream(self, ctx: ApplicationContext, search: Option(str, "paste YT/Spotify link or just type whatever "
+                                                                         "you want")):
+        await ctx.respond(embed=self.createEmbed(f"🎶 Searching ``{search}`` on the web!"), ephemeral=True)
+        if ctx.guild.voice_client is None:
+            voice_client = await ctx.author.voice.channel.connect()
+            self.queues[ctx.guild.id] = QueueManager(voice_client=voice_client, ctx=ctx)
+        async with ctx.typing():
+            searchResult = await self.songExtractor.searchOnWeb(search=search, ctx=ctx)
+        send_msg = self.queues[ctx.guild.id].player.is_running()
+        self.queues[ctx.guild.id].addSongs(searchResult)
+        if send_msg:
+            await ctx.respond(embed=self.createEmbed(f"✅ Enqueued result for ``{search}``"), ephemeral=True)
+
+    @commands.slash_command(name="pause",
+                            description="Pauses the current playing music")
+    @isAuthorConnected()
+    @canBotDisconnect()
+    @isSameChannel()
+    async def _pause(self, ctx: ApplicationContext):
+        if not await self.isBotRunning(ctx):
             return
-        if activate is not True and activate is not False:
-            activate = True
-        msg, gid = self.getGuild(ctx)
-        if not ctx.author.voice:
-            return await ctx.send(
-                embed=discord.Embed(
-                    description=f"{emojis[1]} You must be connected to a channel",
-                    color=discord.Color.from_rgb(0, 0, 0)))
-        if self.is_connected(ctx) and activate:
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Bot is already connected to a channel"))
-        if activate:
-            await msg.add_reaction("👌")
-        if gid not in self.music.keys() and not self.is_connected(ctx):
-            vc = await ctx.author.voice.channel.connect()
-            self.music = self.music or dict()
-            self.music[gid] = SongQueue(self.client, vc, ctx)
+        if self.queues[ctx.guild.id].voice_client.is_paused():
+            await ctx.respond(embed=createErrorEmbed("Music is already paused"), ephemeral=True)
+            return
+        await ctx.respond(embed=self.createEmbed(f"⏸ Paused ``{self.queues[ctx.guild.id].currSong.title}``"),
+                          ephemeral=True)
+        self.queues[ctx.guild.id].pauseAudio()
 
+    @commands.slash_command(name="resume",
+                            description="Resume the current playing music")
+    @isAuthorConnected()
+    @canBotDisconnect()
+    @isSameChannel()
+    async def _resume(self, ctx: ApplicationContext):
+        if not await self.isBotRunning(ctx):
+            return
+        if not self.queues[ctx.guild.id].voice_client.is_paused():
+            await ctx.respond(embed=createErrorEmbed("Music is already playing"), ephemeral=True)
+            return
+        await ctx.respond(embed=self.createEmbed(f"▶️Resumed ``{self.queues[ctx.guild.id].currSong.title}``"),
+                          ephemeral=True)
+        self.queues[ctx.guild.id].resumeAudio()
 
-    @commands.command(aliases=['l', 'dc', 'leave'])
-    async def _leave(self, ctx: commands.Context):
-        msg, gid = self.getGuild(ctx)
-        if (
-            not ctx.author.voice
-            or gid not in self.music.keys()
-            or ctx.author.voice.channel is not self.music[gid].vc.channel
-        ):
-            return await ctx.send(embed=discord.Embed(
-                description="You must be connected to the same channel as the bot",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        if self.music[gid].loopedTask is not None:
-            self.music[gid].loopedTask.cancel()
-        await ctx.message.add_reaction('👋')
-        self.music[gid].vc.cleanup()
-        await self.music[gid].vc.disconnect()
-        self.music.pop(gid)
+    @commands.slash_command(name="nowplaying",
+                            description="Sends details about the current playing song")
+    @canBotDisconnect()
+    async def _nowplaying(self, ctx: ApplicationContext):
+        if not await self.isBotRunning(ctx):
+            return
+        await ctx.respond(embed=self.queues[ctx.guild.id].currSong.createEmbed(), ephemeral=True)
 
-    @commands.command(aliases=['play', 'p', 'stream'])
-    async def _stream(self, ctx: commands.Context, *, search: str = None):
-        msg, gid = self.getGuild(ctx)
-        if search is None:
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} You must provide a URL or a search string",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        if not ctx.author.voice:
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} You must connected to a channel",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        if not self.is_connected(ctx):
-            if gid in self.music.keys():
-                self.music.pop(gid)
-            await ctx.invoke(self._join, False)
-        await msg.add_reaction("☝")
-        ytdlSource = YTDLSource()
-        results = await ytdlSource.extract_info(search, ctx, self.client.loop)
-        if not isinstance(results, discord.Message):
-            if len(results) == 1:
-                await ctx.send(embed=discord.Embed(
-                    description=f"{emojis[0]} Enqueued ``{results[0].title}``",
-                    color=discord.Color.blurple()))
-            else:
-                await ctx.send(embed=discord.Embed(
-                    description=f"{emojis[0]} Enqueued ``{len(results)}`` songs",
-                    color=discord.Color.blurple()))
-            self.music[gid].enqueueList(results)
-
-    @commands.command(aliases=['pause'])
-    async def _pause(self, ctx: commands.Context):
-        msg, gid = self.getGuild(ctx)
-        if not self.music[gid].vc.is_playing():
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} No Audio is being played",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        elif self.music[gid].vc.is_paused():
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Audio is already paused, type ``+resume`` to unpause the audio",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        await msg.add_reaction('⏸')
-        self.music[gid].pause()
-
-    @commands.command(aliases=['resume'])
-    async def _resume(self, ctx: commands.Context):
-        msg, gid = self.getGuild(ctx)
-        if not self.music[gid].vc.is_playing() and not self.music[gid].vc.is_paused():
-            print(self.music[gid].vc.is_paused())
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} No Audio is being played",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        elif not self.music[gid].vc.is_paused():
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Audio is already playing, type ``+pause`` to pause the audio",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        await msg.add_reaction('▶')
-        self.music[gid].resume()
-
-    @commands.command(aliases=['np', 'nowplaying', 'current', 'currentsong'])
-    async def _nowPlaying(self, ctx: commands.Context):
-        msg, gid = self.getGuild(ctx)
-        if not self.music[gid].vc.is_playing():
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} No Audio is being played",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        await ctx.send(embed=self.music[gid].curr.createSongEmbed())
-
-    @commands.command(aliases=['loopsong', 'ls', 'loop'])
-    async def _loopSong(self, ctx: commands.Context):
-        msg, gid = self.getGuild(ctx)
-        if not self.music[gid].vc.is_playing():
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} No Audio is being played",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        self.music[gid].curr.loop = not self.music[gid].curr.loop
-        if self.music[gid].curr.loop:
-            return await ctx.send("Looping Song 🔂")
+    @commands.slash_command(name="loopsong",
+                            description="Sets weather current song should be looped")
+    @isAuthorConnected()
+    @canBotDisconnect()
+    @isSameChannel()
+    async def _loopsong(self, ctx: ApplicationContext):
+        if not await self.isBotRunning(ctx):
+            return
+        self.queues[ctx.guild.id].loopSong()
+        if self.queues[ctx.guild.id].currSong.shouldLoop:
+            await ctx.respond(embed=self.createEmbed(f"🔁 Looping ``{self.queues[ctx.guild.id].currSong.title}``"),
+                              ephemeral=True)
         else:
-            return await ctx.send("Cancelled Song Loop ❌")
+            await ctx.respond(embed=self.createEmbed(f"🔁❌ Cancelled Looping "
+                                                     f"``{self.queues[ctx.guild.id].currSong.title}``"), ephemeral=True)
 
-    @commands.command(aliases=['queue', 'q'])
-    async def _queue(self, ctx: commands.Context):
-        msg, gid = self.getGuild(ctx)
-        startOfPage = f"```{self.client.user.display_name}'s Queue - Page 1\n-------------------\n"
-        if gid not in self.music.keys() or not self.is_connected(ctx) or \
-                not self.music[gid].vc.is_playing() and not self.music[gid].vc.is_paused():
-            return await ctx.send(startOfPage + "\n```")
-        elif self.music[gid].__sizeof__() == 0:
-            startOfPage += f"1. {self.music[gid].curr.title} - ({self.music[gid].curr.convertedDur})" \
-                           f"\n-------------------\n** Current Song: {self.music[gid].curr.title}" \
-                           f" - ({self.music[gid].curr.convertedDur})\n** Next Song: None - " \
-                           f"(None)\n```"
+    @commands.slash_command(name="clear",
+                            description="Clears all songs from the queue")
+    @isAuthorConnected()
+    @canBotDisconnect()
+    @isSameChannel()
+    async def _clear(self, ctx: ApplicationContext):
+        if not await self.isBotRunning(ctx):
+            return
+        if self.queues[ctx.guild.id].qsize() == 0:
+            await ctx.respond(embed=createErrorEmbed("Queue's already empty"), ephemeral=True)
+            return
+        self.queues[ctx.guild.id].clearQueue()
+        await ctx.respond(embed=self.createEmbed("🙀 Emptied queue"), ephemeral=True)
+
+    @commands.slash_command(name="delete",
+                            description="Deletes a song from the queue")
+    @isAuthorConnected()
+    @canBotDisconnect()
+    @isSameChannel()
+    async def _delete(self, ctx: ApplicationContext, value: Option(int, "The number of the song you want to delete")):
+        if not await self.isBotRunning(ctx):
+            return
+        item: Union[None, Song] = self.queues[ctx.guild.id].deleteSong(value)
+        if item is None:
+            return await ctx.respond(embed=createErrorEmbed("Couldn't delete Song from queue, "
+                                                            "type /queue to find which song you want to delete"),
+                                     ephemeral=True)
+        return await ctx.respond(embed=self.createEmbed(f"✍ ``{item.title}`` has been deleted"), ephemeral=True)
+
+    @commands.slash_command(name="shuffle",
+                            description="Shuffles the queue",)
+    @isAuthorConnected()
+    @canBotDisconnect()
+    @isSameChannel()
+    async def _shuffle(self, ctx: ApplicationContext):
+        if not await self.isBotRunning(ctx):
+            return
+        self.queues[ctx.guild.id].shuffleQueue()
+        return await ctx.respond(embed=self.createEmbed("🔀 Shuffled queue"), ephemeral=True)
+
+    @commands.slash_command(name="skip",
+                            description="Skips the current song",)
+    @isAuthorConnected()
+    @canBotDisconnect()
+    @isSameChannel()
+    async def _skip(self, ctx: ApplicationContext):
+        if not await self.isBotRunning(ctx):
+            return
+        song: Song = self.queues[ctx.guild.id].skipSong()
+        return await ctx.respond(embed=self.createEmbed(f"⏭ Skipped ``{song.title}``"), ephemeral=True)
+
+    @commands.slash_command(name="back",
+                            description="Goes back to previous song")
+    @isAuthorConnected()
+    @canBotDisconnect()
+    @isSameChannel()
+    async def _back(self, ctx: ApplicationContext):
+        if not await self.isBotRunning(ctx):
+            return
+        song: Song = self.queues[ctx.guild.id].returnSong()
+        return await ctx.respond(embed=self.createEmbed(f"⏮ Stopped ``{song.title}`` returning to previous"),
+                                 ephemeral=True)
+
+    @commands.slash_command(name="loopqueue",
+                            description="Loops the whole queue")
+    @isAuthorConnected()
+    @canBotDisconnect()
+    @isSameChannel()
+    async def _loopqueue(self, ctx: ApplicationContext):
+        if not await self.isBotRunning(ctx):
+            return
+        self.queues[ctx.guild.id].loopQueue()
+        if self.queues[ctx.guild.id].loop:
+            await ctx.respond(embed=self.createEmbed("🔁 Looping Queue"), ephemeral=True)
         else:
-            startOfPage += f"{self.music[gid].__str__()[0]}-------------------\n** Current Song: {self.music[gid].curr.title}" \
-                           f" - ({self.music[gid].curr.convertedDur})\n** Next Song: {self.music[gid].first().title or None} - " \
-                           f"({self.music[gid].first().convertedDur or None})\n```"
-        btnAfter = Button(style=discord.ButtonStyle.grey, emoji="⏭")
-        btnBefore = Button(style=discord.ButtonStyle.grey, emoji="⏮")
-        self.music[gid].page = 0
+            await ctx.respond(embed=self.createEmbed("🔁❌ Cancelled Queue Looping"), ephemeral=True)
 
-        btnAfter.callback = lambda inter: self.btn_after_callback(inter, ctx)
-        btnBefore.callback = lambda inter: self.btn_before_callback(inter, ctx)
-        view = View()
+    @commands.slash_command(name="removedupes",
+                            description="Remove all song duplicates")
+    @isAuthorConnected()
+    @canBotDisconnect()
+    @isSameChannel()
+    async def _removedupes(self, ctx: ApplicationContext):
+        if not await self.isBotRunning(ctx):
+            return
+        self.queues[ctx.guild.id].removeDupes()
+        await ctx.respond(embed=self.createEmbed("❌ Removed all song duplicates"), ephemeral=True)
 
-        view.add_item(btnAfter)
-        view.add_item(btnBefore)
-        if self.music[gid].msg:
-            # This try checks if the message is already deleted
-            try:
-                await self.music[gid].msg.delete()
-            except Exception:
-                pass
-        self.music[gid].msg = await ctx.send(startOfPage, view=view)
+    @commands.slash_command(name="seek",
+                            description="Seeks to a specific time in the video")
+    @isAuthorConnected()
+    @canBotDisconnect()
+    @isSameChannel()
+    async def _seek(self, ctx: ApplicationContext,
+                    seek: Option(seekConverter, "Seek through the video (format: hh:mm:ss)")):
+        if not await self.isBotRunning(ctx):
+            return
+        await ctx.respond(embed=self.createEmbed(f"⏲ Seeking to ``{seek}`` in "
+                                                 f"``{self.queues[ctx.guild.id].currSong.title}``"), ephemeral=True)
+        self.queues[ctx.guild.id].seekTo(seek)
 
-    @commands.command(aliases=['clearqueue', 'clearq', 'clear'])
-    async def _clear(self, ctx):
-        msg, gid = self.getGuild(ctx)
-        self.music[gid].clear()
-        await msg.add_reaction('👌')
+    @_seek.error
+    async def _seek_error(self, ctx: ApplicationContext, error: CommandError):
+        await ctx.respond(embed=createErrorEmbed("Use format hh:mm:ss (ex. 00:00:05)"), ephemeral=True)
 
-    @commands.command(aliases=['delete', 'del', 'remove'])
-    async def _delete(self, ctx: commands.Context, index: int):
-        msg, gid = self.getGuild(ctx)
-        if not self.is_connected(ctx) or not self.music[gid].vc.is_playing():
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} No Audio is being played"
-            ))
-        if index == 1:
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} You can't delete the current song"
-            ))
-        if index > self.music[gid].__sizeof__()+1 or index < 2:
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} You must choose an index between 2 and {self.music[gid].__sizeof__()+1}"
-            ))
-        await msg.add_reaction('👌')
-        removedSong: Song = self.music[gid].__delete__(index-2)
-        await ctx.send(embed=discord.Embed(
-            description=f"{emojis[1]} Song ``{removedSong.title}`` has been deleted"
-        ))
+    @commands.slash_command(name="queue",
+                            description="Presents the current playing queue")
+    @isAuthorConnected()
+    @canBotDisconnect()
+    async def _queue(self, ctx: ApplicationContext):
+        if not await self.isBotRunning(ctx):
+            return
+        queuePages = getQueueBook(self.queues[ctx.guild.id].queue, self.queues[ctx.guild.id].currSong)
+        paginator = Paginator(pages=queuePages)
+        await paginator.respond(ctx.interaction, ephemeral=True)
 
-
-
-    @commands.command(aliases=['shuffle'])
-    async def _shuffle(self, ctx: commands.Context):
-        msg, gid = self.getGuild(ctx)
-        if not self.music[gid].vc.is_playing() and not self.music[gid].vc.is_paused():
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Bot must be playing something",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        self.music[gid].shuffle()
-        await msg.add_reaction('🔀')
-
-    @commands.command(aliases=['skip', 's'])
-    async def _skip(self, ctx: commands.Context):
-        msg, gid = self.getGuild(ctx)
-        self.music[gid].skip()
-        await msg.add_reaction('⏭')
-
-    @commands.command(aliases=['back', 'b'])
-    async def _back(self, ctx: commands.Context):
-        msg, gid = self.getGuild(ctx)
-        print(len(self.music[gid].passed))
-        if len(self.music[gid].passed) > 1:
-            self.music[gid].back()
-        await msg.add_reaction('⏮')
-
-    @commands.command(aliases=['lq', 'loopqueue'])
-    async def _loopqueue(self, ctx: commands.Context):
-        msg, gid = self.getGuild(ctx)
-        if not self.music[gid].vc.is_playing() and not self.music[gid].vc.is_paused():
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Bot must be playing something",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        self.music[gid].loop()
-        if self.music[gid].loop:
-            return await ctx.send("Looping Queue 🔂")
-        await ctx.send("Cancelled Queue Loop ❌")
-
-    @commands.command(aliases=['removedupes'])
-    async def _removeDupes(self, ctx: commands.Context):
-        msg, gid = self.getGuild(ctx)
-        if not self.music[gid].vc.is_playing() and not self.music[gid].vc.is_paused():
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Bot must be playing something",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        self.music[gid].removeDupes()
-        await msg.add_reaction('👍')
-
-    @commands.command(aliases=['seek', 'seekTo'])
-    async def _seek(self, ctx: commands.Context, time: str):
-        msg, gid = self.getGuild(ctx)
-        if not self.music[gid].vc.is_playing() and not self.music[gid].vc.is_paused():
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Bot must be playing something",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        # Check if string time matches hh:mm:ss or hh:mm format
-        if time.count(':') == 2:
-            time = time.split(':')
-            time = int(time[0]) * 3600 + int(time[1]) * 60 + int(time[2])
-        elif time.count(':') == 1:
-            time = time.split(':')
-            time = int(time[0]) * 60 + int(time[1]) + 1
-        else:
-            return await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Invalid time format",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        time = 1 if time == 0 else time
-        self.music[gid].seek(time)
-        await msg.add_reaction('⏱')
-
-
-
-    @_removeDupes.before_invoke
-    @_loopqueue.before_invoke
-    @_clear.before_invoke
-    @_back.before_invoke
-    @_skip.before_invoke
-    @_delete.before_invoke
-    @_shuffle.before_invoke
-    @_loopSong.before_invoke
-    @_resume.before_invoke
-    @_leave.before_invoke
-    @_pause.before_invoke
-    @_pause.before_invoke
-    @_seek.before_invoke
-    async def ensure_state(self, ctx):
-        if not ctx.author.voice:
-            await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} You must be connected to a channel",
-                color=discord.Color.from_rgb(0, 0, 0)))
-        if not self.is_connected(ctx):
-            await ctx.send(embed=discord.Embed(
-                description=f"{emojis[1]} Bot must be connected to a voice channel",
-                color=discord.Color.from_rgb(0, 0, 0)))
-            raise EnsureStateFailed
+    async def isBotRunning(self, ctx: ApplicationContext):
+        if not self.queues[ctx.guild.id].isBotPlaying():
+            await ctx.respond(embed=createErrorEmbed("Bot is not playing anything at the moment"), ephemeral=True)
+            return False
+        return True
 
     @staticmethod
-    def getGuild(ctx: commands.Context):
-        message = ctx.message
-        guild: discord.Guild = ctx.guild
-        return message, int(guild.id)
-
-    @staticmethod
-    def is_connected(ctx: commands.Context):
-        vc: discord.VoiceClient = get(ctx.bot.voice_clients, guild=ctx.guild)
-        return vc and vc.is_connected()
-
-    async def btn_after_callback(self, interaction, ctx):
-        msg, gid = self.getGuild(ctx)
-        if self.music[gid].page + 1 < len(self.music[gid].__str__()):
-            self.music[gid].page += 1
-            await self.music[gid].msg.edit(content=self.getPageMethod(gid))
-
-    async def btn_before_callback(self, interaction, ctx):
-        msg, gid = self.getGuild(ctx)
-        if self.music[gid].page > 0:
-            self.music[gid].page -= 1
-            await self.music[gid].msg.edit(content=self.getPageMethod(gid))
-
-    def getPageMethod(self, gid):
-        startOfPage = f"```{self.client.user.display_name}'s Queue - Page {self.music[gid].page + 1}\n-------------------\n"
-        startOfPage += f"{self.music[gid].__str__()[self.music[gid].page]}-------------------\n** Current Song: {self.music[gid].curr.title}" \
-                       f" - ({self.music[gid].curr.convertedDur})\n** Next Song: {self.music[gid].first().title} - " \
-                       f"({self.music[gid].first().convertedDur})\n```"
-        return startOfPage
+    def createEmbed(message):
+        return discord.Embed(
+            title=f" {message}",
+            colour=discord.Colour.blurple()
+        )
 
 
-async def setup(client):
-    await client.add_cog(MusicCommands(client))
-
-
-class EnsureStateFailed(Exception):
-    pass
+def setup(client):
+    client.add_cog(MusicCommands(client))
