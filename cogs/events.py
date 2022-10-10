@@ -1,4 +1,3 @@
-import discord
 from discord.ext import commands
 
 
@@ -9,8 +8,8 @@ class events(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print("Bot is ready to function!")
+        print("Bot is ready!")
 
 
-def setup(client):
-    client.add_cog(events(client))
+async def setup(client):
+    await client.add_cog(events(client))
